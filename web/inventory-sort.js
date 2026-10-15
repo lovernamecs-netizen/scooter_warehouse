@@ -1,0 +1,1 @@
+export function sortInventory(vehicles,mode='manufactured'){return [...vehicles].sort((a,b)=>{if(mode==='manufactured'){const m=(a.manufactured_month||'9999-99').localeCompare(b.manufactured_month||'9999-99');if(m)return m;}return (a.received_at||'9999').localeCompare(b.received_at||'9999')||String(a.id).localeCompare(String(b.id));});}
