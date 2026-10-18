@@ -1,0 +1,75 @@
+import {createRequire} from 'node:module';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {execFileSync,spawn} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+import {sortInventory} from '../web/inventory-sort.js';
+import {vinCandidates,validVin,vinAmbiguities,swapVinCharacter} from '../web/vin.js';
+const require=createRequire(import.meta.url);
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const vin='L1234567890123456';
+for(const raw of ['NO','VIN','NO 123','ABCDEFGHIJKLMNOPQ','XX'+vin+'YY'])assert.deepEqual(vinCandidates(raw),[],raw);
+assert.deepEqual(vinCandidates('CHASSIS NO: '+vin),[vin]);
+assert.deepEqual(vinCandidates('NO\n'+vin+'\n125CC'),[vin]);
+assert.deepEqual(vinCandidates('VIN NO: L123 4567 8901 23456'),[vin]);
+assert.deepEqual(vinCandidates('NO', ['NO123456789012345']),[]);
+assert.equal(validVin('NO'),false);
+assert.deepEqual(vinCandidates('L123456789O123456'),['L1234567890123456']);
+assert.deepEqual(vinCandidates('VIN L1234S67890123456'),['L1234S67890123456']);
+assert.equal(swapVinCharacter('L1234S67890123456',5),'L1234567890123456');
+assert.equal(swapVinCharacter('L1234567890123456',5),'L1234S67890123456');
+assert.equal(swapVinCharacter('L1234567890123456',4),'L1234567890123456');
+assert.deepEqual(vinAmbiguities('NO'),[]);
+const stock=[{id:'unknown',manufactured_month:null,received_at:'2020-01-01'},{id:'new',manufactured_month:'2025-03',received_at:'2025-01-01'},{id:'old2',manufactured_month:'2024-12',received_at:'2025-02-01'},{id:'old1',manufactured_month:'2024-12',received_at:'2025-01-01'}];
+assert.deepEqual(sortInventory(stock).map(x=>x.id),['old1','old2','new','unknown']);assert.equal(sortInventory(stock,'received')[0].id,'unknown');assert.equal(stock[0].id,'unknown');
+const dir=mkdtempSync(tmpdir()+'/warehouse-safety-'),cwd=resolve('scooter_warehouse');
+const env={...process.env,DATABASE_URL:'sqlite:///'+dir+'/test.db',WAREHOUSE_ADMIN_PASSWORD:'LocalTestOnly-1234'};
+for(const arg of ['init','demo'])execFileSync('python3',['-m','server.cli',arg],{cwd,env});
+const server=spawn('python3',['-m','uvicorn','server.app:app','--port','8892'],{cwd,env,stdio:'ignore'});
+let browser;
+try{
+ for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:8892/health')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||'/tmp/chrome1161/chrome-linux/headless_shell',args:['--no-sandbox']});
+ const p=await browser.newPage();p.setDefaultTimeout(6000);const errors=[];p.on('pageerror',e=>errors.push(e.message));
+ let discard=false,dialogCount=0;p.on('dialog',async d=>{dialogCount++;if(discard)await d.accept();else await d.dismiss();});
+ await p.goto('http://127.0.0.1:8892');await p.locator('[name=username]').fill('admin');await p.locator('[name=password]').fill('LocalTestOnly-1234');await p.locator('#login button').click();
+ await p.locator('.sidebar [data-page=receive]').click();
+ await p.locator('#model_id').selectOption({label:'PCX125'});await p.locator('#color_id').selectOption({label:'화이트'});await p.locator('#smart_key').fill('KEEP-ME');await p.locator('#manufactured_month').fill('2025-03');
+ await p.locator('[data-act=close]').click();assert.equal(await p.locator('#smart_key').inputValue(),'KEEP-ME');
+ await p.keyboard.press('Escape');assert.equal(await p.locator('#smart_key').inputValue(),'KEEP-ME');
+ await p.evaluate(()=>history.back());await p.waitForTimeout(150);assert.equal(await p.locator('#smart_key').inputValue(),'KEEP-ME');
+ await p.locator('[data-act=scan-receipt]').click();await p.locator('#scan-vin').fill('NO');await p.locator('[data-act=scan-confirm]').click();assert.match(await p.locator('.modal-error').innerText(),/17/);
+ await p.locator('[data-act=close]').first().click();assert.equal(await p.locator('#smart_key').inputValue(),'KEEP-ME');
+ console.log('basic cancel passed');
+ // Mock existing APK bridge: raw OCR returns an invalid old-native candidate.
+ await p.evaluate(()=>window.WarehouseNative={scan(){}});
+ await p.locator('[data-act=scan-receipt]').click();await p.evaluate(()=>window.onNativeVin({raw:'NO\n125CC',candidates:['NO123456789012345']}));assert.equal(await p.locator('#scan-vin').inputValue(),'');
+ await p.evaluate(()=>history.back());await p.waitForTimeout(150);assert.equal(await p.locator('#smart_key').inputValue(),'KEEP-ME');
+ await p.locator('[data-act=scan-receipt]').click();await p.evaluate(v=>window.onNativeVin({raw:'VIN NO: '+v,candidates:[]}),vin);await p.locator('[data-act=scan-confirm]').click();assert.equal(await p.locator('#vin').inputValue(),vin);assert.equal(await p.locator('#smart_key').inputValue(),'KEEP-ME');
+ assert.equal(await p.locator('#manufactured_month').inputValue(),'2025-03');await p.evaluate(()=>window.handleWarehouseBack());assert.equal(await p.locator('#manufactured_month').inputValue(),'2025-03');console.log('OCR return passed');
+ // Delay save to exercise close/Escape while the request is pending.
+ let commands=0;await p.route('**/api/command',async route=>{commands++;await new Promise(r=>setTimeout(r,350));await route.continue();});
+ await p.locator('[data-act=save-receipt]').click();await p.keyboard.press('Escape');await p.locator('[data-act=close]').click();
+ try{await p.locator('[data-act=vehicle-edit]').waitFor();}catch(e){console.log(await p.locator('#modal').innerText(),errors);throw e;}assert.equal(commands,1);
+
+ await p.locator('[data-act=assign]').click();await p.locator('#number').fill('ORDER-KEEP');
+ await p.locator('[data-act=add-line][data-kind=items]').click();await p.locator('.line-name').fill('테스트 전달품');await p.locator('.line-qty').fill('2');
+ await p.locator('[data-act=close]').click();assert.equal(await p.locator('#number').inputValue(),'ORDER-KEEP');
+ await p.locator('[data-act=save-assign]').click();await p.locator('[data-act=dispatch]').click();
+ await p.locator('[name=exception_reason]').fill('KEEP-REASON');await p.locator('[id^=hand-]').fill('1');
+ await p.locator('[data-act=scan-dispatch]').click();await p.evaluate(v=>window.onNativeVin({raw:'NO: '+v,candidates:[]}),vin);
+ await p.locator('[data-act=close]').first().click();assert.equal(await p.locator('[name=exception_reason]').inputValue(),'KEEP-REASON');assert.equal(await p.locator('[id^=hand-]').inputValue(),'1');
+ await p.locator('[data-act=scan-dispatch]').click();await p.evaluate(v=>window.onNativeVin({raw:v,candidates:[]}),vin);await p.locator('[data-act=scan-confirm]').click();assert.equal(await p.locator('#confirm-vin').inputValue(),vin);assert.equal(await p.locator('[name=exception_reason]').inputValue(),'KEEP-REASON');assert.equal(await p.locator('[id^=hand-]').inputValue(),'1');
+ await p.locator('[data-act=scan-dispatch]').click();await p.evaluate(()=>window.onNativeVin({raw:'VIN: L1234S67890123456',candidates:[]}));
+ assert.equal(await p.locator('#scan-vin').inputValue(),'L1234S67890123456');assert.match(await p.locator('#vin-ambiguities').innerText(),/6번째 S → 5/);
+ await p.locator('[data-act=vin-swap][data-index="5"]').click();assert.equal(await p.locator('#scan-vin').inputValue(),vin);
+ await p.locator('[data-act=vin-swap][data-index="5"]').click();assert.equal(await p.locator('#scan-vin').inputValue(),'L1234S67890123456');
+ await p.locator('[data-act=vin-swap][data-index="5"]').click();await p.locator('[data-act=scan-confirm]').click();assert.equal(await p.locator('#confirm-vin').inputValue(),vin);
+ assert.equal(await p.locator('[name=exception_reason]').inputValue(),'KEEP-REASON');console.log('S/5 positional OCR correction, reversible and parent form preserved PASS');
+ const beforeCancel=commands;discard=true;await p.locator('[data-act=close]').first().click();await p.waitForTimeout(150);assert.equal(commands,beforeCancel);
+ await p.locator('.sidebar [data-page=stock]').click();await p.locator('[data-act=detail]').filter({hasText:''}).first().click();
+ await p.locator('[data-act=vehicle-edit]').click();await p.locator('#smart_key').fill('DISCARD');discard=true;await p.locator('[data-act=close]').click();await p.waitForTimeout(150);assert.equal(await p.locator('#modal').evaluate(e=>e.open),false);
+ assert.deepEqual(errors,[]);assert.ok(dialogCount>=4);
+ console.log(JSON.stringify({ocrCases:9,closeEscapeBack:true,ocrCancelPreservesForm:true,ocrConfirmPreservesForm:true,pendingSaveGuard:true,dispatchQuantitiesAndReasonPreserved:true,cancelSendsNoCommand:true,discard:true,jsErrors:errors}));
+}finally{if(browser)await browser.close();server.kill();rmSync(dir,{recursive:true,force:true});}

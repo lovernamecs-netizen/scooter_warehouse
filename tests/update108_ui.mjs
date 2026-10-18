@@ -1,0 +1,33 @@
+import {createRequire} from 'node:module';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {execFileSync,spawn} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE||'/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const dir=mkdtempSync(tmpdir()+'/warehouse-108-'),cwd=resolve('scooter_warehouse'),env={...process.env,DATABASE_URL:'sqlite:///'+dir+'/test.db',WAREHOUSE_ADMIN_PASSWORD:'LocalTestOnly-1234'};
+for(const arg of ['init','demo'])execFileSync('python3',['-m','server.cli',arg],{cwd,env});
+const server=spawn('python3',['-m','uvicorn','server.app:app','--port','8893'],{cwd,env,stdio:'ignore'});let browser;
+try{
+ for(let i=0;i<100;i++){try{if((await fetch('http://127.0.0.1:8893/health')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH,args:['--no-sandbox']});
+ const p=await browser.newPage({viewport:{width:1440,height:1000}});p.setDefaultTimeout(6000);const errors=[];p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());
+ const login=async p=>{await p.goto('http://127.0.0.1:8893');await p.locator('[name=username]').fill('admin');await p.locator('[name=password]').fill('LocalTestOnly-1234');await p.locator('#login button').click();await p.locator('#global-search').waitFor();};
+ await login(p);await p.locator('.sidebar [data-page=receive]').click();await p.locator('#model_id').selectOption({label:'PCX125'});await p.locator('#color_id').selectOption({label:'화이트'});await p.locator('#vin').fill('L1234567890123456');await p.locator('[name=ubis_installed]').check();await p.locator('#manufactured_month').fill('2025-03');await p.locator('[data-act=save-receipt]').click();await p.locator('[data-act=assign]').click();await p.locator('#number').fill('UI-TAG-108');
+ assert.equal(await p.locator('#assign-form input[type=number]').count(),0);await p.locator('.option-tag').first().click();await p.locator('[data-act=add-line][data-kind=items]').click();await p.locator('.line-name').fill('전달 테스트');assert.equal(await p.locator('.line-qty').inputValue(),'1');await p.locator('.line-qty').fill('2');await p.locator('[data-act=save-assign]').click();
+ await p.locator('[data-act=work-all][data-kind=options]').click();assert.equal(await p.locator('[id^=qty-]').count(),1);await p.locator('[data-act=work-all][data-kind=items]').click();await p.locator('[data-action=finish_work]').click();await p.locator('[data-action=ready]').click();await p.locator('[data-act=stage-ready]').click();await p.locator('[data-act=close]').click();await p.locator('.sidebar [data-page=map]').click();await p.locator('.staging-cards .vehicle-card').waitFor();assert.match(await p.locator('.staging-cards').innerText(),/L1234567890123456/);
+ assert.equal(await p.locator('.slot[data-vehicle]').filter({hasText:'3456'}).count(),0);
+ assert.equal(await p.locator('.staging-cards .manufacture-badge strong').innerText(),'2025-03');await p.locator('.staging-cards .vehicle-card').click();await p.locator('[data-act=move]').click();const target=p.locator('.slot:not(.filled):not(.disabled)').first();await target.click();await p.locator('[data-act=save-move]').click();await p.locator('.staging-cards .vehicle-card').waitFor({state:'detached'});assert.equal(await p.locator('.staging-cards .vehicle-card').count(),0);assert.equal(await p.locator('.slot.filled').filter({hasText:'3456'}).count(),1);
+ await p.locator('.slot.filled').filter({hasText:'3456'}).locator('.manufacture-badge').waitFor();const slot=p.locator('.slot.filled').filter({hasText:'3456'});assert.equal(await slot.locator('.manufacture-badge strong').innerText(),'2025-03');assert.ok(await slot.evaluate(e=>e.scrollHeight<=e.clientHeight+1),'slot content must fit fixed grid geometry');await p.screenshot({path:process.env.UI_SCREENSHOT||'/tmp/warehouse109-map.png',fullPage:true});
+ console.log('desktop tags, quantity separation, staging and return to map PASS');
+ // Docked keyboard simulations: visual viewport shrinks without changing layout viewport.
+ for(const size of [{width:344,height:800,visible:390},{width:768,height:900,visible:420},{width:900,height:600,visible:280}]){
+  const ctx=await browser.newContext({viewport:size,hasTouch:true,isMobile:true,deviceScaleFactor:1});const m=await ctx.newPage();m.on('pageerror',e=>errors.push(e.message));m.on('dialog',d=>d.accept());
+  await m.addInitScript(()=>{window.testKeyboardHeight=null;const proto=Object.getPrototypeOf(visualViewport),get=Object.getOwnPropertyDescriptor(proto,'height').get;Object.defineProperty(visualViewport,'height',{get(){return window.testKeyboardHeight??get.call(this)}});});
+  await login(m);await m.locator('[data-act=receipt]').first().click();const input=m.locator('[name=notes]');await input.fill('키보드 테스트 보존');await m.evaluate(h=>{window.testKeyboardHeight=h;visualViewport.dispatchEvent(new Event('resize'));},size.visible);await m.waitForTimeout(280);
+  const bounds=await m.evaluate(()=>{const field=document.querySelector('[name=notes]').getBoundingClientRect(),body=document.querySelector('.modal-body').getBoundingClientRect(),foot=document.querySelector('.modal-foot').getBoundingClientRect();return {field:{top:field.top,bottom:field.bottom},body:{top:body.top,bottom:body.bottom},foot:foot.bottom,height:visualViewport.height};});
+  assert.ok(bounds.field.top>=bounds.body.top-1&&bounds.field.bottom<=bounds.body.bottom+1,JSON.stringify({size,bounds}));assert.ok(bounds.foot<=size.visible+1,JSON.stringify(bounds));await m.locator('[data-keyboard-dismiss]').click();assert.equal(await input.inputValue(),'키보드 테스트 보존');assert.equal(await input.evaluate(el=>document.activeElement===el),false);
+  await m.evaluate(()=>{window.testKeyboardHeight=null;visualViewport.dispatchEvent(new Event('resize'));});await ctx.close();
+ }
+ assert.deepEqual(errors,[]);console.log('3 folded/unfolded/landscape keyboard viewport simulations PASS; no JavaScript errors');
+}finally{if(browser)await browser.close();server.kill();rmSync(dir,{recursive:true,force:true});}

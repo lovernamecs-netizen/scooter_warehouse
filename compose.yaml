@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: warehouse
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warehouse -d warehouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://warehouse:${DB_PASSWORD}@db:5432/warehouse
+      WAREHOUSE_BACKUP_PASSWORD: ${BACKUP_PASSWORD:?Set BACKUP_PASSWORD in .env}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      WAREHOUSE_DOMAIN: ${WAREHOUSE_DOMAIN:?Set WAREHOUSE_DOMAIN in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on: [app]
+volumes:
+  dbdata:
+  caddydata:
+  caddyconfig:
