@@ -21,7 +21,11 @@ def test_windows_startup_and_port_collision(tmp_path):
    else:raise AssertionError('startup timeout')
    assert httpx.get(f'http://127.0.0.1:{port}/health',trust_env=False).json()['ok']
    collision=subprocess.run(args,cwd=tmp_path,env=env,capture_output=True,timeout=10)
+   assert collision.returncode==0
+   other_env=dict(env,DATABASE_URL='sqlite:///'+str(tmp_path/'different.db'))
+   collision=subprocess.run(args,cwd=tmp_path,env=other_env,capture_output=True,timeout=10)
    assert collision.returncode==1 and (tmp_path/'logs/startup.log').exists()
+   assert not (tmp_path/'different.db').exists()
    assert process.poll() is None
   finally:
    if os.name=='nt':subprocess.run(['taskkill','/PID',str(process.pid),'/T','/F'],capture_output=True)

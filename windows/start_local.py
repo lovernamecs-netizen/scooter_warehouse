@@ -1,19 +1,37 @@
 """Bind the requested socket before opening a browser; never adopt another server."""
-import argparse,os,socket,sys,threading,time,json,urllib.request,webbrowser,uuid
+import argparse,os,socket,sys,threading,time,json,urllib.request,webbrowser,uuid,hashlib
 from pathlib import Path
 
 def main(argv=None):
  parser=argparse.ArgumentParser();parser.add_argument('--port',type=int,default=8765);parser.add_argument('--no-browser',action='store_true');parser.add_argument('--no-dialog',action='store_true');args=parser.parse_args(argv)
  root=Path(__file__).resolve().parents[1];sys.path.insert(0,str(root))
  try:
+  from server.storage_paths import database_url
+  from sqlalchemy.engine import make_url
+  dburl=make_url(database_url())
+  database=str(Path(dburl.database).resolve()) if dburl.get_backend_name()=='sqlite' else dburl.render_as_string(hide_password=True)
+  context=hashlib.sha256((str(root.resolve())+'\0'+database).encode('utf-8')).hexdigest()
+ except Exception as exc:return fail('데이터 경로 설정을 확인하세요.',args,type(exc).__name__)
+ url='http://127.0.0.1:'+str(args.port)
+ try:
   sock=socket.socket();sock.bind(('127.0.0.1',args.port));sock.listen(128)
- except OSError:return fail('포트를 사용할 수 없습니다. 실행 중인 서버와 포트 설정을 확인하세요.',args)
+ except OSError:
+  sock.close()
+  try:
+   # Reuse only this installation AND this database, never an unrelated service.
+   with urllib.request.urlopen(url+'/_startup_identity',timeout=2) as response:existing=json.load(response)
+   if existing.get('context')==context and len(existing.get('id',''))==32:
+    print('이미 실행 중인 창고 프로그램을 엽니다: '+url,flush=True)
+    if not args.no_browser:webbrowser.open(url)
+    return 0
+  except Exception:pass
+  return fail('같은 포트에 다른 서버가 실행 중입니다. 기존 서버와 데이터 경로를 확인하세요.',args)
  try:
   import uvicorn
   from server.app import create_app
   app=create_app();identity=uuid.uuid4().hex
   @app.get('/_startup_identity')
-  def identify():return {'id':identity}
+  def identify():return {'id':identity,'context':context}
   app.router.routes.insert(0,app.router.routes.pop())
   url='http://127.0.0.1:'+str(sock.getsockname()[1])
   def open_when_ready():
