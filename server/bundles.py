@@ -19,6 +19,7 @@ def needs_rack(s,v,a):
     return any(box(l.item) for l in opts),opts,equipment
 
 def ensure(s,v,a):
+    if s.get(Setting,'parts_order:'+a.id):return
     s.flush();required,opts,equipment=needs_rack(s,v,a)
     if not required:return
     if any(rack(e.item) for e in equipment) or any(rack(l.item) for l in opts):return
@@ -27,5 +28,6 @@ def ensure(s,v,a):
     s.add(OptionLine(assignment_id=a.id,master_id=m.id,item=item_snapshot(m),qty=1,required=True))
 
 def check_complete(s,v,a):
+    if s.get(Setting,'parts_order:'+a.id):return
     required,opts,equipment=needs_rack(s,v,a)
     if required:need(any(rack(e.item) for e in equipment) or any(rack(l.item) and l.done>=l.qty for l in opts),'탑박스/EPP에는 짐대가 필요합니다. 짐대 작업을 추가하고 완료하거나 기존 장착품을 확인하세요.')

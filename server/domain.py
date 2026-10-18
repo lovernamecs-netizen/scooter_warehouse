@@ -86,7 +86,8 @@ def vehicle_dto(s,v,u=None):
     result={'id':v.id,'vin':'' if v.vin.startswith('@PENDING:') else v.vin,'vin_pending':v.vin.startswith('@PENDING:'),'reference':'임시-'+v.id[:8],'model_id':v.model_id,'model':model.name,'brand':brand.name if brand else '', 'brand_id':brand.id if brand else '', 'color_id':v.color_id,'color':color.name,'color_hex':color.detail.get('hex','#94a3b8'),'year':v.year,'manufactured_month':v.manufactured_month,'kind':v.kind,'plate':v.plate,'smart_key':v.smart_key if not u or u.role in ['admin','worker'] else '', 'notes':v.notes,'ubis':v.ubis,'version':v.version,'archived':v.archived,'stay_id':st.id if st else None,'received_at':iso(st.received_at) if st else None,'location':loc,'state':state,'assignment':None}
     if a:
         opts,items=lines(s,a);o=get(s,Order,a.order_id)
-        result['assignment']={'id':a.id,'order_id':o.id,'number':o.number,'notes':o.notes,'scheduled':a.scheduled,'work':a.work,'ready':a.ready,'options':[line_dto(l) for l in opts],'items':[line_dto(l) for l in items]}
+        from .parts_orders import plan
+        result['assignment']={'parts_order':plan(s,a),'id':a.id,'order_id':o.id,'number':o.number,'notes':o.notes,'scheduled':a.scheduled,'work':a.work,'ready':a.ready,'options':[line_dto(l) for l in opts],'items':[line_dto(l) for l in items]}
     if v.kind=='USED':
         from .used_stock import summary
         result['used_stock']=summary(s,st)
@@ -102,7 +103,8 @@ def state(s,u):
     return {'revision':get(s,Guard,1).revision,'server_time':iso(now()),'today':today(),'user':{'id':u.id,'username':u.username,'role':u.role},'masters':[{'id':m.id,'kind':m.kind,'name':m.name,'detail':m.detail,'active':m.active,'version':m.version} for m in rows(s,Master)],'vehicles':vehicles,'layout':layout(s)}
 def report(s,d):
     valid_date(d);end=datetime.combine(date.fromisoformat(d)+timedelta(days=1),time.min,KST).astimezone(timezone.utc)
-    outs=[o for o in rows(s,Outbound) if o.day==d]
+    from .parts_orders import effective_outbounds
+    outs=effective_outbounds(s,d)
     models=Counter();options=Counter();new_options=Counter();items=Counter()
     def key(l):
         it=l['item'];return ' / '.join(str(it.get(k,'')) for k in ['name','model','capacity'] if it.get(k))
@@ -117,6 +119,8 @@ def report(s,d):
     nxt=list(s.scalars(select(Assignment).where(Assignment.status=='ACTIVE',Assignment.scheduled==nextday)))
     adjustments=[{'id':a.id,'outbound_id':a.outbound_id,'kind':a.kind,'reason':a.reason,'at':iso(a.at),'detail':a.detail} for a in rows(s,Adjustment) if day(a.at)==d]
     result={'day':d,'received':sum(day(x.received_at)==d and x.reason!='VOID' for x in sts),'ubis':len({h.vehicle_id for h in hist if h.event=='UBIS_INSTALLED' and day(h.at)==d}),'placed':sum(x.first_placed_at is not None and day(x.first_placed_at)==d for x in sts),'dispatched':len(outs),'current_stock':sum(x.closed_at is None for x in sts),'end_stock':sum(x.received_at.replace(tzinfo=timezone.utc)<end and (x.closed_at is None or x.closed_at.replace(tzinfo=timezone.utc)>=end) for x in sts),'models':dict(models),'options':dict(options),'new_options':dict(new_options),'items':dict(items),'next_day':nextday,'next_total':len(nxt),'next_completed':sum(a.work=='COMPLETED' for a in nxt),'adjustments':adjustments,'outbounds':[{'id':o.id,'at':iso(o.at),'vin':o.snapshot['vehicle']['vin'],'model':o.snapshot['vehicle']['model']} for o in outs]}
+    from .parts_orders import daily
+    result['parts_daily']=daily(s,d)
     c=s.get(Closing,d)
     return {**result,'closing':{'at':iso(c.at),'actor':c.actor,'snapshot':c.snapshot} if c else None}
 
@@ -285,7 +289,10 @@ def execute(s,u,action,p):
         if kind=='CORRECTION':
             detail=p.get('detail',{});need(detail.get('category') in ['options','items'],'장착품/전달품을 선택하세요.');clean(detail.get('name',''),120)
             delta=detail.get('delta');need(isinstance(delta,int) and delta!=0 and abs(delta)<=9999,'정정 수량은 0이 아닌 정수입니다.')
-        s.add(Adjustment(outbound_id=o.id,kind=kind,reason=reason,actor=u.username,detail=detail));v.version+=1;audit(s,u,kind,{'outbound_id':o.id,'reason':reason,'detail':detail},v);return {'vehicle_id':v.id}
+        adj=Adjustment(id=uid(),outbound_id=o.id,kind=kind,reason=reason,actor=u.username,detail=detail)
+        from .parts_orders import post_adjustment
+        post_adjustment(s,u,o,adj)
+        s.add(adj);v.version+=1;audit(s,u,kind,{'outbound_id':o.id,'reason':reason,'detail':detail},v);return {'vehicle_id':v.id}
     v=get(s,Vehicle,p.get('vehicle_id'));version(v,p)
     if action=='delete_vehicle':
         admin(u);need(p.get('confirmation')=='삭제','삭제 확인 문구를 입력하세요.')
@@ -357,8 +364,16 @@ def execute(s,u,action,p):
         older=fifo_candidates(s,v)
         fifo_reason=clean(p.get('fifo_override_reason',''),1000)
         need(not older or fifo_reason,{'code':'FIFO_PRIORITY','message':'같은 차종·색상의 더 이른 제조 차량이 있습니다. 작성 내용은 유지됩니다. FIFO 차량 다시 확인을 눌러 우선 차량을 선택하거나, 예외 사유를 입력하고 현재 차량을 선택하세요.','recommended_id':older[0][0].id if older else None},409)
-        number=clean(p['number'],120);need(number,'주문번호를 입력하세요.');o=s.scalar(select(Order).where(Order.number==number))
-        if not o:o=Order(number=number,notes=clean(p.get('notes',''),4000));s.add(o);s.flush()
+        # The command transaction serializes allocation across all users/processes.
+        sequence=s.get(Setting,'order_number_sequence')
+        current=int(sequence.value.get('last',0)) if sequence else 0
+        for existing in s.scalars(select(Order.number)):
+            match=re.fullmatch(r'ow(\d+)',existing,re.IGNORECASE)
+            if match:current=max(current,int(match.group(1)))
+        number=f'ow{current+1:03d}'
+        if not sequence:sequence=Setting(key='order_number_sequence');s.add(sequence)
+        sequence.value={'last':current+1}
+        o=Order(number=number,notes=clean(p.get('notes',''),4000));s.add(o);s.flush()
         a=Assignment(order_id=o.id,stay_id=st.id,scheduled=valid_date(p['scheduled']));s.add(a);s.flush()
         for kind,cls in [('options',OptionLine),('items',DeliveryLine)]:
             seen=set()
@@ -370,13 +385,24 @@ def execute(s,u,action,p):
                     qty(l.get('qty',1),1,1)
                 item=item_snapshot(m) if m else {'name':clean(l.get('name',''),120),'category':'기타','notes':clean(l.get('notes',''),500)};need(item['name'],'전달품 이름을 입력하세요.')
                 s.add(cls(assignment_id=a.id,master_id=m.id if m else None,item=item,qty=qty(l.get('qty',1),1),required=bool(l.get('required',True))))
+        if p.get('parts_order'):
+            from .parts_orders import apply
+            need(not p.get('options') and not p.get('items'),'재고 연결 주문은 부품 계획에서 모든 품목을 선택하세요.')
+            apply(s,u,v,a,p['parts_order'])
         from .bundles import ensure
         ensure(s,v,a)
         audit(s,u,'ASSIGNED',{'number':number,'scheduled':a.scheduled},v)
         if older:
             audit(s,u,'FIFO_OVERRIDE',{'reason':fifo_reason,'assignment_id':a.id,'selected_vin':v.vin,'selected_manufactured_month':v.manufactured_month,'older_candidates':[{'vehicle_id':x.id,'vin':x.vin,'manufactured_month':x.manufactured_month} for x,_ in older]},v)
+    elif action=='parts_plan':
+        need(a is not None,'활성 주문이 없습니다.',409)
+        from .parts_orders import apply
+        apply(s,u,v,a,p['parts_order'],convert=p.get('convert') is True)
+        audit(s,u,'PARTS_PLAN_CHANGED',{'reason':p['parts_order'].get('reason',''),'converted':p.get('convert') is True},v)
     elif action=='plan_line':
         need(a is not None,'활성 주문이 없습니다.',409)
+        from .parts_orders import plan
+        need(not plan(s,a),'재고 연결 주문은 부품 계획 변경을 이용하세요.')
         kind=p.get('kind');need(kind in ['options','items'],'품목 종류를 확인하세요.')
         cls=OptionLine if kind=='options' else DeliveryLine
         if p.get('line_id'):
@@ -413,8 +439,9 @@ def execute(s,u,action,p):
             line.done=qty(p['done'],0,line.qty);a.work='IN_PROGRESS';a.ready=False
             if cls==OptionLine:
                 e=s.scalar(select(Equipment).where(Equipment.line_id==line.id))
-                if not e:e=Equipment(vehicle_id=v.id,line_id=line.id,item=line.item,origin='NEW',qty=0);s.add(e)
-                e.qty=line.done
+                confirmed_existing=line.item.get('parts_source')=='EXISTING' and line.item.get('part_id') and any(x.line_id!=line.id and x.item.get('part_id')==line.item['part_id'] for x in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0)))
+                if not e and not confirmed_existing:e=Equipment(vehicle_id=v.id,line_id=line.id,item=line.item,origin={'FACTORY':'FACTORY','EXISTING':'EXISTING'}.get(line.item.get('parts_source'),'NEW'),qty=0);s.add(e)
+                if e:e.qty=0 if confirmed_existing else line.done
             else:line.handed=min(line.handed,line.done)
             audit(s,u,'WORK_CHECKED',{'kind':p['kind'],'line_id':line.id,'done':line.done},v)
         else:
@@ -463,12 +490,14 @@ def execute(s,u,action,p):
             snap['used_reconditioning']=read(s,st)
         equipment=list(s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0)))
         current_lines={l.id for l in opts}
-        out=Outbound(stay_id=st.id,vehicle_id=v.id,day=today(),snapshot={'schema_version':1,'vehicle':snap,'options':[{'item':e.item,'qty':e.qty,'origin':'NEW' if e.line_id in current_lines else 'EXISTING'} for e in equipment],'items':[{'item':l.item,'qty':l.handed} for l in items if l.handed>0],'actor':u.username,'exception_reason':reason,'missing':missing})
+        from .parts_orders import prepare_dispatch,post_dispatch
+        parts_snapshot=prepare_dispatch(s,u,v,a,p)
+        out=Outbound(stay_id=st.id,vehicle_id=v.id,day=today(),snapshot={'schema_version':1,'parts_order':parts_snapshot,'parts_inventory_status':'POSTED' if parts_snapshot else 'LEGACY_REVIEW_REQUIRED','stock_exception_reason':p.get('stock_exception_reason',''),'vehicle':snap,'options':[{'item':e.item,'qty':e.qty,'origin':('NEW' if e.item.get('parts_source','WAREHOUSE')=='WAREHOUSE' else e.item['parts_source']) if e.line_id in current_lines else 'EXISTING'} for e in equipment],'items':[{'item':l.item,'qty':l.handed} for l in items if l.handed>0],'actor':u.username,'exception_reason':reason,'missing':missing})
         s.add(out);st.closed_at=now();a.status='FULFILLED';a.ready=False
         place=s.get(Placement,st.id)
         if place:s.delete(place)
         stage_set(s,st.id)
-        s.flush();audit(s,u,'DISPATCHED',{'outbound_id':out.id,'exception_reason':reason},v)
+        s.flush();post_dispatch(s,u,out);audit(s,u,'DISPATCHED',{'outbound_id':out.id,'exception_reason':reason},v)
     else:fail('지원하지 않는 작업입니다.')
     if v.kind=='USED' and action in ['equipment','equipment_remove']:
         from .used_stock import read,put

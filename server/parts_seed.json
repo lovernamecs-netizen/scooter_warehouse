@@ -2,14 +2,16 @@
   {
     "id": "MITT",
     "code": "MITT",
-    "name": "토시(블루샤크) 뱅가드 (1BOX 20EA)",
+    "name": "토시(블루샤크) 뱅가드 (1BOX 12EA)",
     "aliases": [],
     "kind": "ea",
-    "pack": 20,
+    "pack": 12,
     "active": true,
     "order": 0,
-    "rule": "b2b",
-    "export_group": null
+    "rule": "",
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "SE",
@@ -17,11 +19,13 @@
     "name": "SE - EPP(순흥) -",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 2,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "ST01",
@@ -29,11 +33,13 @@
     "name": "ST-01 - 탑박스(실버스타) 블랙",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 4,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "ST02",
@@ -41,11 +47,13 @@
     "name": "ST-02 - 탑박스(실버스타) 레인보우",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 6,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "YC",
@@ -53,11 +61,13 @@
     "name": "YC - 거치대 영우",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 8,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "SC",
@@ -65,11 +75,13 @@
     "name": "SC - 거치대 실버스타",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 10,
     "rule": "all",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "WPCX_0",
@@ -77,11 +89,13 @@
     "name": "윈드스크린(PCX) 순흥",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 12,
     "rule": "pcx_b2b",
-    "export_group": "WPCX"
+    "export_group": "WPCX",
+    "price": null,
+    "purpose": null
   },
   {
     "id": "WPCX_1",
@@ -89,11 +103,13 @@
     "name": "윈드스크린(PCX) 실버스타",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 13,
     "rule": "",
-    "export_group": "WPCX"
+    "export_group": "WPCX",
+    "price": null,
+    "purpose": null
   },
   {
     "id": "WNMAX_0",
@@ -101,11 +117,13 @@
     "name": "윈드스크린(NMAX) 순흥",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 14,
     "rule": "",
-    "export_group": "WNMAX"
+    "export_group": "WNMAX",
+    "price": null,
+    "purpose": null
   },
   {
     "id": "WNMAX_1",
@@ -113,11 +131,13 @@
     "name": "윈드스크린(NMAX) 실버스타",
     "aliases": [],
     "kind": "ea",
-    "pack": 1,
+    "pack": null,
     "active": true,
     "order": 15,
     "rule": "",
-    "export_group": "WNMAX"
+    "export_group": "WNMAX",
+    "price": null,
+    "purpose": null
   },
   {
     "id": "SSP",
@@ -129,7 +149,9 @@
     "active": true,
     "order": 16,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "SSN",
@@ -141,7 +163,9 @@
     "active": true,
     "order": 18,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "RBP",
@@ -153,7 +177,9 @@
     "active": true,
     "order": 20,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "RBN",
@@ -165,7 +191,9 @@
     "active": true,
     "order": 22,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "RBF",
@@ -177,7 +205,9 @@
     "active": true,
     "order": 24,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "RBX",
@@ -189,7 +219,9 @@
     "active": true,
     "order": 26,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "RBA",
@@ -201,7 +233,9 @@
     "active": true,
     "order": 28,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "RBZ",
@@ -213,7 +247,9 @@
     "active": true,
     "order": 30,
     "rule": "",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   },
   {
     "id": "CUP",
@@ -225,6 +261,8 @@
     "active": true,
     "order": 32,
     "rule": "b2b",
-    "export_group": null
+    "export_group": null,
+    "price": null,
+    "purpose": null
   }
 ]

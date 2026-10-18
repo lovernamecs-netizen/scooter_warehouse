@@ -6,7 +6,9 @@ const source=readFileSync(require('node:path').join(__dirname,'../web/app.js'),'
 const api=source.slice(source.indexOf('async function api('),source.indexOf('\nasync function refresh('));
 let response;
 const ctx=vm.createContext({AbortController,FormData,setTimeout,clearTimeout,fetch:async()=>response,sessionStorage:{removeItem(){}},describe:x=>typeof x==='string'?x:JSON.stringify(x)});
-vm.runInContext("let token='old',online=true;"+api,ctx);
+const errorSource=readFileSync(require('node:path').join(__dirname,'../web/errors.js'),'utf8');
+const safe=errorSource.slice(0,errorSource.indexOf('let popup=')).replace('export function','function');
+vm.runInContext("let token='old',online=true;"+safe+api,ctx);
 (async()=>{
  response={status:401,ok:false,json:async()=>({detail:'아이디 또는 비밀번호를 확인하세요.'})};
  await assert.rejects(vm.runInContext("api('/login')",ctx),/아이디 또는 비밀번호를 확인하세요/);

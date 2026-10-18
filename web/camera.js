@@ -14,7 +14,16 @@ export async function captureStill(track,video){
  const c=document.createElement('canvas');c.width=video.videoWidth;c.height=video.videoHeight;c.getContext('2d').drawImage(video,0,0);
  return await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(Error('사진을 저장하지 못했습니다. 다시 촬영하세요.')),'image/jpeg',.96));
 }
+// Android uses the system camera rather than a constrained getUserMedia preview.
+async function systemCameraPhoto(){
+ return await new Promise(resolve=>{
+  const input=document.createElement('input');input.type='file';input.accept='image/*';input.setAttribute('capture','environment');input.hidden=true;document.body.append(input);
+  let done=false;const finish=file=>{if(done)return;done=true;input.remove();resolve(file);};
+  input.onchange=()=>finish(input.files?.[0]||null);input.addEventListener('cancel',()=>finish(null));input.click();
+ });
+}
 export async function capturePhoto(){
+ if(/Android/i.test(navigator.userAgent))return await systemCameraPhoto();
  const dialog=document.createElement('dialog');dialog.className='capture-dialog';dialog.innerHTML=`<header><strong>사진 촬영</strong><button type="button" data-camera="cancel" aria-label="닫기">✕</button></header><div class="capture-view"><video autoplay playsinline muted></video><span class="capture-resolution"></span><p role="status">카메라 연결 중…</p></div><footer><button type="button" data-camera="cancel">취소</button><button type="button" class="capture-shutter" data-camera="shoot" aria-label="사진 촬영" disabled>${cameraIcon}</button><button type="button" data-camera="file">파일</button></footer><input type="file" accept="image/jpeg,image/png,image/webp" hidden>`;
  document.body.append(dialog);dialog.showModal();let stream=null,done=false,busy=false;
  return await new Promise(resolve=>{

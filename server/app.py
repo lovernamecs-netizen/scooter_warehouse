@@ -1,4 +1,4 @@
-import os,time,json,hashlib,threading,zipfile
+import os,time,json,hashlib,threading,zipfile,uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI,Request,HTTPException,UploadFile,File,Form
@@ -18,11 +18,16 @@ def create_app(database=None):
     @asynccontextmanager
     async def lifespan(app):
         from .photo_backup import scheduler
+        if database is None:
+            from .storage_paths import require_existing
+            require_existing(db.engine)
         db.init();stop=threading.Event();thread=threading.Thread(target=scheduler,args=(db,stop),daemon=True);thread.start()
         try:yield
         finally:stop.set();thread.join(timeout=2)
-    app=FastAPI(title='Scooter Warehouse',version='1.0.30',lifespan=lifespan)
+    app=FastAPI(title='Scooter Warehouse',version='1.0.31',lifespan=lifespan)
     app.state.db=db
+    from .errors import install
+    install(app,db)
     attempts={};attempt_lock=threading.Lock()
     def user(s,request):return authorize(s,request.headers.get('Authorization','').removeprefix('Bearer '))
     @app.exception_handler(IntegrityError)
@@ -31,8 +36,14 @@ def create_app(database=None):
     async def missing(request,exc):return JSONResponse(status_code=422,content={'detail':'필수 입력값이 누락되었습니다.'})
     @app.middleware('http')
     async def headers(request,call_next):
-        if int(request.headers.get('content-length','0') or 0)>38_000_000:return JSONResponse(status_code=413,content={'detail':'요청 크기가 너무 큽니다.'})
-        response=await call_next(request)
+        request.state.request_id=uuid.uuid4().hex
+        try:
+            length=int(request.headers.get('content-length','0') or 0)
+        except ValueError:return app.state.error_response(request,400,'요청 형식이 올바르지 않습니다.')
+        if length>38_000_000:return app.state.error_response(request,413,'요청 크기가 너무 큽니다.')
+        try:response=await call_next(request)
+        except Exception as exc:response=app.state.unexpected_error(request,exc)
+        response.headers['X-Request-ID']=request.state.request_id
         response.headers['X-Content-Type-Options']='nosniff';response.headers['X-Frame-Options']='DENY'
         response.headers['Referrer-Policy']='no-referrer'
         response.headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'"
@@ -44,7 +55,7 @@ def create_app(database=None):
         with db.transaction() as s:
             u=user(s,request);admin(u);return plan(s,p)
     @app.get('/health')
-    def health():return {'ok':True,'version':'1.0.30'}
+    def health():return {'ok':True,'version':app.version}
     @app.post('/api/login')
     def login(p:dict,request:Request):
         name=str(p.get('username',''))[:80];key=(request.client.host,name);t=time.monotonic()
@@ -130,7 +141,8 @@ def create_app(database=None):
         from .photo_backup import backup
         with db.transaction() as s:admin(user(s,request))
         try:return backup(db)
-        except Exception as e:raise HTTPException(503,str(e))
+        except HTTPException:raise
+        except Exception as e:return app.state.unexpected_error(request,e)
     @app.get('/api/photo-backups')
     def photo_backups(request:Request):
         from .photo_store import config
@@ -144,7 +156,9 @@ def create_app(database=None):
         with db.transaction() as s:
             admin(user(s,request));root=config(s)['backup_path'];name=p.get('name','');need(Path(name).name==name and name.endswith('.zip'),'백업 이름 오류')
         try:return restore(safe(root,name),None,False)
-        except Exception as e:raise HTTPException(422,str(e))
+        except HTTPException:raise
+        except ValueError:raise HTTPException(422,'백업 파일과 복구 대상 폴더를 확인하세요.')
+        except Exception as e:return app.state.unexpected_error(request,e)
     @app.post('/api/photo-restore/stage')
     def photo_restore_stage(p:dict,request:Request):
         from .photo_store import config,safe
@@ -154,7 +168,9 @@ def create_app(database=None):
         need(p.get('confirm')=='RESTORE','복구 확인이 필요합니다.')
         destination=Path(p.get('destination',''));need(destination.is_absolute(),'새 복구 폴더의 절대 경로를 입력하세요.')
         try:return restore(safe(root,name),destination,True)
-        except Exception as e:raise HTTPException(422,str(e))
+        except HTTPException:raise
+        except ValueError:raise HTTPException(422,'백업 파일과 복구 대상 폴더를 확인하세요.')
+        except Exception as e:return app.state.unexpected_error(request,e)
     @app.post('/api/used/{vehicle_id}/open-folder')
     def open_folder(vehicle_id:str,request:Request):
         from .photo_store import config,safe
@@ -173,7 +189,12 @@ def create_app(database=None):
         return recognize(p.get('image',''))
     @app.get('/api/state')
     def get_state(request:Request):
-        with db.transaction() as s:return state(s,user(s,request))
+        with db.transaction() as s:
+            u=user(s,request);result=state(s,u)
+            if u.role=='admin':
+                from .photo_store import backup_warnings
+                result['backup_warnings']=backup_warnings(s)
+            return result
     @app.post('/api/command')
     def mutate(body:dict,request:Request):
         with db.transaction() as s:return command(s,user(s,request),body)
@@ -232,6 +253,13 @@ def create_app(database=None):
     @app.get('/api/parts')
     def parts_view(request:Request,day:str,month:str):
         with db.transaction() as s:return parts.view(s,user(s,request),day,month)
+    @app.post('/api/parts/order-preview')
+    def parts_order_preview(p:dict,request:Request):
+        from .parts_orders import build
+        with db.transaction() as s:
+            u=user(s,request);need(u.role in ['admin','worker'],'권한이 없습니다.',403)
+            _,data=parts.load(s)
+            return build(data,p['model_id'],p.get('vehicle_kind','NEW'),p['plan'])
     @app.post('/api/parts/preview')
     def parts_preview(p:dict,request:Request):
         with db.transaction() as s:return parts.preview(s,user(s,request),p)

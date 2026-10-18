@@ -20,8 +20,10 @@ def config(s):
  row=s.get(Setting,'photo_storage')
  if row:return dict(row.value)
  db=Path(s.bind.url.database or 'warehouse.db').resolve()
- root=db.parent/'Data'/'Vehicles'
- return {'active':'default','roots':{'default':str(root)},'backup_path':str(db.parent/'Backups'),'retention':7,'daily':False}
+ from .storage_paths import data_root
+ base=data_root()
+ root=base/'Photos' if base else db.parent/'Data'/'Vehicles'
+ return {'active':'default','roots':{'default':str(root)},'backup_path':str((base or db.parent)/'Backups'),'retention':7,'daily':False}
 def safe(root,relative):
  p=Path(root).resolve()/relative
  p=p.resolve();need(p.is_relative_to(Path(root).resolve()),'잘못된 파일 경로',422)
@@ -111,7 +113,17 @@ def status(s):
    try:read_file(s,r.value)
    except Exception:failures.append({'id':r.value['id'],'state':'원본 누락 또는 무결성 오류'})
  last=s.get(Setting,'photo_backup_status')
- return {**cfg,'storage':roots,'failures':failures,'backup':last.value if last else {}}
+ warnings=backup_warnings(s)
+ return {**cfg,'database_path':str(Path(s.bind.url.database).resolve()) if s.bind.dialect.name=='sqlite' else '외부 DB','warnings':warnings,'storage':roots,'failures':failures,'backup':last.value if last else {}}
+def backup_warnings(s):
+ cfg=config(s);last=s.get(Setting,'photo_backup_status')
+ warnings=[]
+ if not cfg.get('daily'):warnings.append('자동 백업이 꺼져 있습니다.')
+ if not last or not last.value.get('ok'):warnings.append('성공한 최근 통합 백업을 확인할 수 없습니다. 백업 상태를 확인하세요.')
+ elif (datetime.now(timezone.utc)-datetime.fromisoformat(last.value['at'])).total_seconds()>172800:warnings.append('마지막 통합 백업이 48시간 이상 지났습니다.')
+ warnings.append('백업 폴더가 다른 물리 장치인지 확인하세요. 같은 PC의 폴더 분리만으로는 디스크 고장에 대비할 수 없습니다.')
+ return warnings
+
 def configure(s,p):
  cfg=config(s)
  for field in ['root','backup_path']:

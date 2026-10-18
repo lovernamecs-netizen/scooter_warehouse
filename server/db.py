@@ -6,8 +6,10 @@ from .models import Base, Guard, Setting
 
 class Database:
     def __init__(self,url=None):
-        url=url or os.getenv('DATABASE_URL','sqlite:///warehouse.db')
-        self.engine=create_engine(url,connect_args={'check_same_thread':False,'timeout':30} if url.startswith('sqlite') else {},pool_pre_ping=True)
+        from .storage_paths import database_url
+        from sqlalchemy.engine import make_url
+        url=url or database_url()
+        self.engine=create_engine(url,connect_args={'check_same_thread':False,'timeout':30} if make_url(url).get_backend_name()=='sqlite' else {},pool_pre_ping=True)
         self.sqlite=self.engine.dialect.name=='sqlite'
         if self.sqlite:
             @event.listens_for(self.engine,'connect')

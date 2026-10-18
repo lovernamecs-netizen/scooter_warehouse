@@ -1,3 +1,4 @@
+import {isPhotoBack} from './photo-viewer.js';
 // Shared protection for X, Escape, browser Back and refresh.
 export function installFormSafety(dialog, notify) {
   let baseline='', busy=false, parent=null,probe=()=>false;
@@ -21,7 +22,7 @@ export function installFormSafety(dialog, notify) {
   }
   dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
   dialog.addEventListener('close',()=>{if(!dialog.open){parent=null;if(history.state?.warehouseDialog)history.back();}});
-  window.addEventListener('popstate',()=>{if(dialog.open){if(!close())arm();}});
+  window.addEventListener('popstate',()=>{if(isPhotoBack())return;if(dialog.open){if(!close())arm();}});
   window.addEventListener('beforeunload',e=>{if(dirty()||busy||parent){e.preventDefault();e.returnValue='';}});
   return {close,dirty,mark,setDirtyProbe(fn){probe=fn;},setBusy(value){busy=value;},opened(){mark();arm();},
     capture(){const clone=dialog.cloneNode(true);clone.querySelectorAll('[data-act=scan-receipt],[data-act=scan-dispatch]').forEach(e=>e.disabled=false);parent={html:clone.innerHTML,values:values(),baseline};},

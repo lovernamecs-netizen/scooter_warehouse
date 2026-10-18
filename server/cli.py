@@ -21,7 +21,7 @@ def main():
     elif args.action=='demo':
         from .domain import execute
         with db.transaction() as s:
-            if s.scalar(select(Master)):raise SystemExit('빈 DB에서만 예시 마스터를 추가합니다.')
+            if s.scalar(select(Master).where(Master.kind.in_(['brand','model','color']))) or s.scalar(select(Vehicle)):raise SystemExit('차량·차종이 없는 DB에서만 예시 마스터를 추가합니다.')
             u=s.scalar(select(User).where(User.role=='admin'))
             if not u:raise SystemExit('먼저 init 실행')
             brands={name:execute(s,u,'master',{'kind':'brand','name':name})['id'] for name in ['HONDA','YAMAHA','ZONTES','SYM']}

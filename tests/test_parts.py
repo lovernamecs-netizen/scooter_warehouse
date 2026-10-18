@@ -45,10 +45,10 @@ def test_cancel_preserves_original(env):
  cmd('cancel',422,id=ident,reason='중복 취소')
 
 def test_b2b_used_wrong_day(env):
- db,c,h,get,cmd,base,prev=setup(env);base();rows=prev('1\t2026. 10. 3\tB2B\t중고\t업체\tPCX125\tSC');assert all(k in rows[0]['codes'] for k in ['MITT','CUP','WPCX(순흥)']);assert any('중고' in x for x in rows[0]['issues']);cmd('import',422,day='2026-10-02',rows=rows,checked=True,external_confirmed=True)
+ db,c,h,get,cmd,base,prev=setup(env);base();rows=prev('1\t2026. 10. 3\tB2B\t중고\t업체\tPCX125\tSC');assert 'CUP' in rows[0]['codes'] and 'MITT' not in rows[0]['codes'] and 'WPCX' not in rows[0]['codes'];assert any('중고' in x for x in rows[0]['issues']);cmd('import',422,day='2026-10-02',rows=rows,checked=True,external_confirmed=True)
 
 def test_pack_code_preservation(env):
- db,c,h,get,cmd,base,prev=setup(env);base();i=next(x for x in get()['items'] if x['id']=='RBP');i['pack']=12;i['aliases']='';cmd('item',item=i);r=next(x for x in get()['report']['rows'] if x['id']=='RBP');assert r['ending']==100 and r['display']=='8/4';i['code']='OTHER';cmd('item',422,item=i)
+ db,c,h,get,cmd,base,prev=setup(env);base();i=next(x for x in get()['items'] if x['id']=='RBP');i['pack']=12;i['aliases']='';cmd('item',item=i);r=next(x for x in get()['report']['rows'] if x['id']=='RBP');assert r['ending']==100 and r['display']=='8/4';i['code']='OTHER';cmd('item',item=i);assert 'RBP' in next(x for x in get()['items'] if x['id']=='RBP')['aliases']
 
 def test_preserve_vehicle_rows(env):
  db,c,h,get,cmd,base,prev=setup(env);ident=env[5]();env[7]('move',ident,{'slot_id':env[8]['slots'][0]['id']});tables=['vehicles','stays','placements','outbound','history','zones','slots','orders','assignments']
