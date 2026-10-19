@@ -114,7 +114,9 @@ def status(s):
    except Exception:failures.append({'id':r.value['id'],'state':'원본 누락 또는 무결성 오류'})
  last=s.get(Setting,'photo_backup_status')
  warnings=backup_warnings(s)
- return {**cfg,'database_path':str(Path(s.bind.url.database).resolve()) if s.bind.dialect.name=='sqlite' else '외부 DB','warnings':warnings,'storage':roots,'failures':failures,'backup':last.value if last else {}}
+ database=Path(s.bind.url.database).resolve() if s.bind.dialect.name=='sqlite' and s.bind.url.database!=':memory:' else None
+ sizes={name:(Path(str(database)+suffix).stat().st_size if database and Path(str(database)+suffix).is_file() else 0) for name,suffix in [('database',''),('wal','-wal'),('shm','-shm')]}
+ return {**cfg,'sizes':sizes,'database_path':str(Path(s.bind.url.database).resolve()) if s.bind.dialect.name=='sqlite' else '외부 DB','warnings':warnings,'storage':roots,'failures':failures,'backup':last.value if last else {}}
 def backup_warnings(s):
  cfg=config(s);last=s.get(Setting,'photo_backup_status')
  warnings=[]

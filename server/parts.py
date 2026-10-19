@@ -77,7 +77,7 @@ def report(data,d):
     # A later stocktake terminates dependency on previous transactions, while same-day audit remains visible.
     signature=hashof({'day':d,'rows':rows,'deps':sorted(deps),'daily':sorted(e['id'] for e in daily)})
     cs=[c for c in data['closings'] if c['day']==d];closing=cs[-1] if cs else None
-    return {'day':d,'rows':rows,'totals':dict(totals),'base_day':base['day'] if base else None,'stocktake':bool(endbase and endbase['day']==d),'signature':signature,'status':('재확인 필요' if closing['signature']!=signature else '확정') if closing else ('미확정' if daily else '미입력'),'closing':closing,'entries':daily}
+    return {'day':d,'rows':rows,'totals':dict(totals),'base_day':base['day'] if base else None,'inventory_base_day':endbase['day'] if endbase else None,'inventory_confirmed':bool(endbase and all(v is not None for v in endbase['quantities'].values())),'uncounted_items':sum(v is None for v in ending.values()),'stocktake':bool(endbase and endbase['day']==d),'signature':signature,'status':('재확인 필요' if closing['signature']!=signature else '확정') if closing else (('실사 확정' if all(v is not None for v in endbase['quantities'].values()) else '실사 일부 입력') if endbase and endbase['day']==d else ('미확정' if daily else '미입력')),'closing':closing,'entries':daily}
 
 def source_warnings(s,data,d):
     warnings=[];seen={e.get('outbound_id') for e in live(data) if e['kind']=='VEHICLE'}
