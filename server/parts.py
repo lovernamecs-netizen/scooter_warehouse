@@ -53,15 +53,33 @@ def report(data,d):
     def balance(until):
         bs=[e for e in events if e['kind']=='STOCKTAKE' and e['day']<=until]
         base=max(bs,key=lambda e:(e['day'],e['at'],e['id'])) if bs else None
-        vals={i['id']:base['quantities'].get(i['id']) if base else None for i in items}
-        deps=[base['id']] if base else []
+        # Preserve the exact legacy calculation/signature until a partial count exists.
+        if not any(e.get('mode')=='PARTIAL' for e in bs) or base.get('mode')!='PARTIAL':
+            bases={i['id']:base for i in items}
+            vals={i['id']:base['quantities'].get(i['id']) if base else None for i in items}
+            deps=[base['id']] if base else []
+            for e in events:
+                if e['kind']=='STOCKTAKE' or e['day']>until or (base and e['day']<=base['day']):continue
+                deps.append(e['id'])
+                for line in e.get('lines',[]):
+                    if vals.get(line['item_id']) is not None:vals[line['item_id']]+=line['delta']
+            return vals,base,deps,bases
+        bases={};vals={};deps=set()
+        for i in items:
+            # Old full counts intentionally reset even missing/unknown items.
+            candidates=[e for e in bs if e.get('mode')!='PARTIAL' or i['id'] in e['quantities']]
+            chosen=max(candidates,key=lambda e:(e['day'],e['at'],e['id'])) if candidates else None
+            bases[i['id']]=chosen;vals[i['id']]=chosen['quantities'].get(i['id']) if chosen else None
+            if chosen:deps.add(chosen['id'])
         for e in events:
-            if e['kind']=='STOCKTAKE' or e['day']>until or (base and e['day']<=base['day']):continue
-            deps.append(e['id'])
+            if e['kind']=='STOCKTAKE' or e['day']>until:continue
             for line in e.get('lines',[]):
-                if vals.get(line['item_id']) is not None:vals[line['item_id']]+=line['delta']
-        return vals,base,deps
-    opening,base,_=balance(previous);ending,endbase,deps=balance(d)
+                ident=line['item_id'];chosen=bases.get(ident)
+                if chosen and e['day']<=chosen['day']:continue
+                deps.add(e['id'])
+                if vals.get(ident) is not None:vals[ident]+=line['delta']
+        return vals,base,list(deps),bases
+    opening,base,_,_=balance(previous);ending,endbase,deps,endbases=balance(d)
     daily=[e for e in events if e['day']==d];totals=Counter();rows=[]
     for i in sorted(items,key=lambda x:(x['order'],x['id'])):
         sums=Counter()
@@ -70,7 +88,8 @@ def report(data,d):
                 if l['item_id']==i['id']:sums[e['kind']]+=l['delta']
         row={'id':i['id'],'code':i['code'],'name':i['name'],'active':i['active'],'opening':opening[i['id']], 'inbound':sums['IN'],'vehicle':-sums['VEHICLE']-sums['VOID']-sums['CORRECTION'],'outbound':-sums['OUT'],'returned':sums['RETURN'],'damage':-sums['DAMAGE'],'price':i.get('price'),'adjustment':sums['ADJUST'],'ending':ending[i['id']]}
         calculated=None if row['opening'] is None else row['opening']+sum(sums.values())
-        row['stocktake']=endbase is not None and endbase['day']==d
+        itembase=endbases[i['id']]
+        row['stocktake']=itembase is not None and itembase['day']==d
         row['count_difference']=None if not row['stocktake'] or calculated is None or row['ending'] is None else row['ending']-calculated
         row['display']=formatted(i,row['ending']);rows.append(row)
         for k in ['inbound','vehicle','outbound','returned','damage']:totals[k]+=row[k]
@@ -222,9 +241,15 @@ def mutate(s,u,p):
         data['audit'].append({'at':at,'actor':u.username,'action':'REVIEW_DEFAULTS','before':before,'after':copy.deepcopy(data['items'])})
     elif action=='stocktake':
         need(u.role=='admin','실사 확정은 관리자만 가능합니다.',403);d=day(p['day']);reason=str(p.get('reason','')).strip();need(reason,'실사 사유/기준을 입력하세요.');qs=p.get('quantities',{})
-        need(set(qs)==set(items),'모든 품목 수량을 확인하세요. 모르면 -를 입력하세요.');need(not any(e['kind']=='STOCKTAKE' and e['day']==d for e in live(data)),'같은 날짜 실사가 있습니다. 기존 기록을 취소한 뒤 다시 입력하세요.')
+        mode=p.get('mode','FULL');need(mode in ['FULL','PARTIAL'],'실사 방식 오류')
+        need(isinstance(qs,dict) and qs and set(qs)<=set(items),'실사할 품목과 수량을 확인하세요.')
+        if mode=='FULL':
+            need(set(qs)==set(items),'모든 품목 수량을 확인하세요. 모르면 -를 입력하세요.')
+            need(not any(e['kind']=='STOCKTAKE' and e['day']==d for e in live(data)),'같은 날짜 실사가 있습니다. 기존 기록을 취소한 뒤 다시 입력하세요.')
+        quantities={k:quantity(items[k],v) for k,v in qs.items()}
+        if mode=='PARTIAL':need(all(q is not None for q in quantities.values()),'선택한 품목은 수량을 입력하세요. 변경하지 않을 품목은 선택에서 제외하세요.')
         from .parts_orders import snapshot
-        add('STOCKTAKE',d,quantities={k:quantity(items[k],v) for k,v in qs.items()},snapshots={k:snapshot(i) for k,i in items.items()},reason=reason,scope='END_OF_DAY')
+        add('STOCKTAKE',d,quantities=quantities,snapshots={k:snapshot(items[k]) for k in qs},reason=reason,scope='END_OF_DAY',**({'mode':'PARTIAL'} if mode=='PARTIAL' else {}))
     elif action=='movement':
         kind=p['kind'];need(kind in ['IN','OUT','DAMAGE','RETURN','ADJUST'],'거래 유형 오류');reason=str(p.get('reason','')).strip();need(reason,'공급처/수령처와 사유를 입력하세요.');lines=[]
         for line in p.get('lines',[]):
