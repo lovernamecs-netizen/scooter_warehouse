@@ -345,6 +345,30 @@ def execute(s,u,action,p):
         need(v.ubis!=status,'이미 같은 유비스 상태입니다.',409);v.ubis=status
         if a:a.ready=False
         audit(s,u,'UBIS_INSTALLED' if status=='INSTALLED' else 'UBIS_CHANGED',{'status':status},v)
+    elif action=='swap':
+        other=get(s,Vehicle,p.get('other_vehicle_id'));need(other.id!=v.id,'다른 차량의 자리를 선택하세요.')
+        version(other,{'version':p.get('other_version')});other_st=current_stay(s,other)
+        first=s.get(Placement,st.id);second=s.get(Placement,other_st.id)
+        need(first and second,'두 차량 모두 창고 자리에 배치되어 있어야 맞바꿀 수 있습니다.',409)
+        need(first.slot_id==p.get('source_slot_id') and second.slot_id==p.get('slot_id'),'차량 위치가 변경되었습니다. 지도를 새로고침하세요.',409)
+        cfg=wh.config(s);first_slot=get(s,Slot,first.slot_id);second_slot=get(s,Slot,second.slot_id)
+        for car,dest in [(v,second_slot),(other,first_slot)]:
+            zone=get(s,Zone,dest.zone_id)
+            need(any(w['id']==wh.wid(cfg,zone.id) and w['active'] for w in cfg['items']),'사용 중지된 창고입니다.',409)
+            need(dest.enabled and zone.active and dest.row<zone.rows and dest.col<zone.cols,'사용할 수 없는 위치입니다.',409)
+            need(not zone.model_ids or car.model_id in zone.model_ids,'맞바꿀 구역에 허용되지 않는 차종이 있습니다.')
+        before=location(s,st);other_before=location(s,other_st)
+        # Unique slot constraints apply throughout; both removals and insertions share one transaction.
+        s.delete(first);s.delete(second);s.flush()
+        s.add_all([Placement(stay_id=st.id,slot_id=second_slot.id),Placement(stay_id=other_st.id,slot_id=first_slot.id)]);s.flush()
+        for stay,car,dest in [(st,v,second_slot),(other_st,other,first_slot)]:
+            if stay.id in staging(s):
+                stage_set(s,stay.id);order=assignment(s,stay)
+                if order:order.ready=False
+            if get(s,Zone,dest.zone_id).kind in ['STORAGE','USED'] and not stay.first_placed_at:stay.first_placed_at=now()
+        audit(s,u,'MOVED',{'from':before,'to':location(s,st),'swap_with':other.id},v)
+        audit(s,u,'MOVED',{'from':other_before,'to':location(s,other_st),'swap_with':v.id},other)
+        other.version+=1
     elif action=='move':
         sl=get(s,Slot,p['slot_id']);z=get(s,Zone,sl.zone_id)
         cfg=wh.config(s);need(any(w['id']==wh.wid(cfg,z.id) and w['active'] for w in cfg['items']),'사용 중지된 창고입니다.',409)
@@ -394,6 +418,9 @@ def execute(s,u,action,p):
         audit(s,u,'ASSIGNED',{'number':number,'scheduled':a.scheduled},v)
         if older:
             audit(s,u,'FIFO_OVERRIDE',{'reason':fifo_reason,'assignment_id':a.id,'selected_vin':v.vin,'selected_manufactured_month':v.manufactured_month,'older_candidates':[{'vehicle_id':x.id,'vin':x.vin,'manufactured_month':x.manufactured_month} for x,_ in older]},v)
+    elif action=='link_legacy_parts':
+        from .legacy_parts import link
+        link(s,u,v,a,p)
     elif action=='parts_plan':
         need(a is not None,'활성 주문이 없습니다.',409)
         from .parts_orders import apply
