@@ -204,7 +204,17 @@ def daily(s,d):
     for out in s.scalars(select(Outbound).where(Outbound.day==d)):
         adjustments=list(s.scalars(select(Adjustment).where(Adjustment.outbound_id==out.id)))
         void=any(a.kind=='VOID' for a in adjustments);p=out.snapshot.get('parts_order');channel=p['channel'] if p else 'LEGACY'
-        vehicles.append({'id':out.id,'vin':out.snapshot['vehicle']['vin'],'model':out.snapshot['vehicle']['model'],'channel':channel,'void':void})
+        vehicle={'id':out.id,'vin':out.snapshot['vehicle']['vin'],'model':out.snapshot['vehicle']['model'],'channel':channel,'void':void,'parts':[],'linked':bool(p),'adjusted':any(a.kind=='CORRECTION' for a in adjustments)}
+        if p:
+            for row in p.get('lines',[]):
+                quantity=row['qty']+sum(a.detail['delta'] for a in adjustments if a.kind=='CORRECTION' and a.detail.get('line_key')==row['key'])
+                if quantity:vehicle['parts'].append({'name':row['item']['name'],'purpose':row['purpose'],'source':row['source'],'qty':quantity})
+        else:
+            for category,purpose,quantity_key in [('options','INSTALL','qty'),('items','DELIVERY','qty')]:
+                for row in out.snapshot.get(category,[]):
+                    quantity=row.get(quantity_key,0)
+                    if quantity:vehicle['parts'].append({'name':row['item']['name'],'purpose':purpose,'source':'UNLINKED','qty':quantity})
+        vehicles.append(vehicle)
         if void:continue
         counts[channel]+=1
         models[out.snapshot['vehicle']['model']]+=1
