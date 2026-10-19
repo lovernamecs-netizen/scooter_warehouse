@@ -98,7 +98,12 @@ def build(data,model_id,vehicle_kind,p):
             if factory:add(component,'factory','INSTALL',source=sources.get(component,'FACTORY'),label=model.get('factory_label'))
             else:need(component,'해당 차종의 세트 구성품이 미등록입니다.');add(component,'set','INSTALL')
     for delivery in p.get('deliveries',[]):add(delivery['item_id'],'additional','DELIVERY',integer(delivery.get('qty',1),1),'WAREHOUSE')
-    return {'version':cfg['version'],'channel':channel,'model_id':model_id,'vehicle_kind':vehicle_kind,'lines':result,'request':copy.deepcopy(p),'reason':reason}
+    omitted=p.get('omit_lines',[])
+    need(isinstance(omitted,list) and all(isinstance(k,str) and len(k)<=150 for k in omitted) and len(omitted)<=200,'제외 품목 형식 오류')
+    # Keep exact purpose keys: excluding an installation must not remove separate delivery.
+    omitted=set(omitted);removed=[r for r in result if r['key'] in omitted]
+    result=[r for r in result if r['key'] not in omitted]
+    return {'version':cfg['version'],'channel':channel,'model_id':model_id,'vehicle_kind':vehicle_kind,'lines':result,'request':copy.deepcopy(p),'reason':reason,'excluded_lines':removed}
 
 def apply(s,u,v,a,p,convert=False):
     from .parts import load
