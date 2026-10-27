@@ -42,6 +42,8 @@ class Vehicle(Base):
     kind: Mapped[str]=mapped_column(default='NEW')
     plate: Mapped[str]=mapped_column(default='')
     smart_key: Mapped[str]=mapped_column(default='')
+    serial_number: Mapped[str]=mapped_column(default='')
+    ubis_number: Mapped[str]=mapped_column(default='')
     notes: Mapped[str]=mapped_column(default='')
     ubis: Mapped[str]=mapped_column(default='NOT_INSTALLED')
     version: Mapped[int]=mapped_column(default=1)
@@ -180,4 +182,74 @@ class ImportJob(Base):
     actor: Mapped[str]
     rows: Mapped[list]=mapped_column(JSON)
     applied: Mapped[bool]=mapped_column(default=False)
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+
+
+# Vehicle-only inventory history; intentionally independent of the parts ledger.
+class VehicleInventorySnapshot(Base):
+    __tablename__='vehicle_inventory_snapshots'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    day: Mapped[str]=mapped_column(String,index=True)
+    version: Mapped[int]=mapped_column(Integer)
+    source: Mapped[str]
+    signature: Mapped[str]
+    data: Mapped[dict]=mapped_column(JSON)
+    previous_id: Mapped[str|None]=mapped_column(String,nullable=True)
+    actor: Mapped[str]
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+    __table_args__=(UniqueConstraint('day','version'),)
+class VehicleInventoryEvent(Base):
+    __tablename__='vehicle_inventory_events'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    day: Mapped[str]=mapped_column(String,index=True)
+    kind: Mapped[str]
+    basis_id: Mapped[str|None]=mapped_column(String,nullable=True)
+    signature: Mapped[str]
+    data: Mapped[dict]=mapped_column(JSON)
+    actor: Mapped[str]
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+class VehicleValuation(Base):
+    __tablename__='vehicle_valuations'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    scope: Mapped[str]
+    target_id: Mapped[str]=mapped_column(String,index=True)
+    vehicle_kind: Mapped[str]
+    effective_day: Mapped[str]=mapped_column(String,index=True)
+    amount: Mapped[int|None]=mapped_column(Integer,nullable=True)
+    reason: Mapped[str]
+    actor: Mapped[str]
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+class VehicleInventoryFact(Base):
+    __tablename__='vehicle_inventory_facts'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    vehicle_id: Mapped[str]=mapped_column(String,index=True)
+    effective_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),index=True)
+    data: Mapped[dict]=mapped_column(JSON)
+    actor: Mapped[str]
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+class VehicleInventoryRequest(Base):
+    __tablename__='vehicle_inventory_requests'
+    id: Mapped[str]=mapped_column(String,primary_key=True)
+    digest: Mapped[str]
+    result: Mapped[dict]=mapped_column(JSON)
+
+class PurchaseRecord(Base):
+    __tablename__='purchase_records'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    record_id: Mapped[str]=mapped_column(String,index=True)
+    revision: Mapped[int]
+    source_key: Mapped[str]=mapped_column(String,index=True)
+    data: Mapped[dict]=mapped_column(JSON)
+    vehicle_id: Mapped[str|None]=mapped_column(String,nullable=True)
+    stay_id: Mapped[str|None]=mapped_column(String,nullable=True)
+    actor: Mapped[str]
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+    __table_args__=(UniqueConstraint('record_id','revision'),)
+
+class PurchaseReviewEvent(Base):
+    __tablename__='purchase_review_events'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    kind: Mapped[str]
+    data: Mapped[dict]=mapped_column(JSON)
+    actor: Mapped[str]
     at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)

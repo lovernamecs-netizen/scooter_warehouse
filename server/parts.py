@@ -230,6 +230,11 @@ def mutate(s,u,p):
         for mid,rule in cfg['models'].items():
             m=s.get(Master,mid);need(m and m.kind=='model','실제 차종 ID를 선택하세요.')
             need(isinstance(rule,dict),'차종 규칙 형식 오류')
+            if rule.get('preinstalled_bracket'):
+                need(rule.get('bracket')=='RBZ' and rule.get('factory_rack') is True,'입고 기본 장착 분리는 RBZ 매핑과 공장 기본 확인이 필요합니다.')
+            if 'defaults' in rule:
+                need(isinstance(rule['defaults'],dict),'차종 기본품 형식 오류')
+                for channel,ids in rule['defaults'].items():need(channel in ['B2B','B2C'] and isinstance(ids,list) and len(ids)==len(set(ids)) and all(k in items and items[k]['active'] for k in ids),'차종 기본품을 확인하세요.')
             for k in ['slide','bracket','screen_b2b','screen_b2c']:
                 if rule.get(k):need(rule[k] in items,'미등록 구성품입니다.')
         for channel,ids in cfg['defaults'].items():need(channel in ['B2B','B2C'] and isinstance(ids,list) and all(k in items for k in ids),'기본품 설정 오류')

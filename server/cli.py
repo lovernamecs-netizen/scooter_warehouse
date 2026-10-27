@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import select,insert
 from .db import Database
 from .models import *
+from . import parts  # Register parts tables for complete backup and restore.
 from .security import hash_password
 
 def main():

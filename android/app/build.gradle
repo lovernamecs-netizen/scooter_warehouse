@@ -3,7 +3,7 @@ android {
     namespace 'com.hakom.warehouse'
     compileSdk 35
     buildToolsVersion "35.0.0"
-    defaultConfig { applicationId 'com.hakom.warehouse.photos'; minSdk 26; targetSdk 35; versionCode 31; versionName '1.0.31' }
+    defaultConfig { applicationId 'com.hakom.warehouse.photos'; minSdk 26; targetSdk 35; versionCode 33; versionName '1.0.33' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes { release { minifyEnabled false } }
 }
@@ -19,7 +19,7 @@ dependencies {
     implementation 'com.google.mlkit:text-recognition:16.0.1'
 }
 
-// Release signing must use the existing installation key, supplied outside this repository.
+// Sign release APK externally using the persistent user-owned key. Never store keys in this repository.
 android.applicationVariants.all { variant ->
     variant.outputs.all { outputFileName = "스쿠터창고.apk" }
 }

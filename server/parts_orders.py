@@ -2,7 +2,7 @@
 import copy
 from collections import Counter
 from sqlalchemy import select
-from .models import Setting, Master, OptionLine, DeliveryLine, Outbound, Adjustment, uid, now
+from .models import Setting, Master, OptionLine, DeliveryLine, Outbound, Adjustment, Equipment, uid, now
 from .domain import need, today, lines
 
 TEMPLATES = {
@@ -34,7 +34,7 @@ def build(data,model_id,vehicle_kind,p):
     need(isinstance(excluded,list),'기본품 제외 형식 오류')
     reason=str(p.get('reason','')).strip()
     need(not excluded or reason,'기본품 제외 사유가 필요합니다.')
-    defaults=cfg['defaults'].get(channel,[])
+    defaults=model.get('defaults',{}).get(channel,cfg['defaults'].get(channel,[]))
     if channel=='B2B' and model.get('screen_b2b'):defaults=defaults+[model['screen_b2b']]
     need(set(excluded)<=set(defaults),'기본품 제외 대상 오류')
     def add(ident,origin,purpose=None,qty=1,source=None,label=None):
@@ -63,7 +63,7 @@ def build(data,model_id,vehicle_kind,p):
         row={'key':key,'part_id':ident,'item':snapshot(i) if i else {'id':None,'code':None,'name':label,'pack':None,'price':None},'qty':qty,'purpose':purpose,'source':source,'origins':[origin]}
         result.append(row);bykey[key]=row
     for ident in defaults:
-        if ident not in excluded:add(ident,'default',('DELIVERY' if model.get('bracket')=='RBF' else 'INSTALL') if channel=='B2B' and ident=='CUP' else None)
+        if ident not in excluded:add(ident,'default',('DELIVERY' if model.get('bracket')=='RBF' else 'INSTALL') if channel=='B2B' and ident=='CUP' else ('INSTALL' if model.get('preinstalled_bracket') else None))
     choice=p.get('set','')
     if choice:
         rule=cfg['sets'].get(choice);need(rule,'미등록 세트입니다.')
@@ -90,7 +90,8 @@ def build(data,model_id,vehicle_kind,p):
     selected_sets=[r for r in cfg['sets'].values() if r['item_id'] in chosen]
     need(len({r['item_id'] for r in selected_sets})<=1,'EPP/탑박스 세트는 하나만 선택하세요.')
     for ident in p.get('install',[]):
-        add(ident,'selection','INSTALL')
+        preinstalled=model.get('preinstalled_bracket') and vehicle_kind=='NEW' and ident==model.get('bracket')=='RBZ' and model.get('factory_rack')
+        add(ident,'factory' if preinstalled else 'selection','INSTALL',source=sources.get(ident,'FACTORY') if preinstalled else None)
         for rule in selected_sets:
             if rule['item_id']!=ident:continue
             component=model.get(rule['component'])
@@ -98,12 +99,30 @@ def build(data,model_id,vehicle_kind,p):
             if factory:add(component,'factory','INSTALL',source=sources.get(component,'FACTORY'),label=model.get('factory_label'))
             else:need(component,'해당 차종의 세트 구성품이 미등록입니다.');add(component,'set','INSTALL')
     for delivery in p.get('deliveries',[]):add(delivery['item_id'],'additional','DELIVERY',integer(delivery.get('qty',1),1),'WAREHOUSE')
+    if model.get('preinstalled_bracket') and vehicle_kind=='NEW' and model.get('factory_rack') and model.get('bracket')=='RBZ' and 'RBZ:INSTALL' not in bykey:
+        add('RBZ','factory','INSTALL',source='FACTORY')
+    for row in result:
+        row['preinstalled']=bool(model.get('preinstalled_bracket') and vehicle_kind=='NEW' and row['part_id']==model.get('bracket')=='RBZ' and row['purpose']=='INSTALL' and row['source']=='FACTORY')
     omitted=p.get('omit_lines',[])
     need(isinstance(omitted,list) and all(isinstance(k,str) and len(k)<=150 for k in omitted) and len(omitted)<=200,'제외 품목 형식 오류')
     # Keep exact purpose keys: excluding an installation must not remove separate delivery.
     omitted=set(omitted);removed=[r for r in result if r['key'] in omitted]
     result=[r for r in result if r['key'] not in omitted]
     return {'version':cfg['version'],'channel':channel,'model_id':model_id,'vehicle_kind':vehicle_kind,'lines':result,'request':copy.deepcopy(p),'reason':reason,'excluded_lines':removed}
+
+def ensure_preinstalled(s,v,data=None):
+    if data is None:
+        from .parts import load
+        _,data=load(s)
+    model=config(data)['models'].get(v.model_id,{})
+    if not (v.kind=='NEW' and model.get('preinstalled_bracket') and model.get('factory_rack') and model.get('bracket')=='RBZ'):return None
+    from .parts import itemmap
+    item=itemmap(data).get('RBZ');need(item and item['active'],'RBZ 기본 장착 품목을 확인하세요.')
+    existing=[e for e in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0)) if e.item.get('part_id')=='RBZ']
+    if existing:
+        need(len(existing)==1 and existing[0].origin=='FACTORY','기존 RBZ 출처가 다릅니다. 기본 장착 분류를 먼저 검토하세요.')
+        return existing[0]
+    e=Equipment(vehicle_id=v.id,item={**snapshot(item),'part_id':'RBZ','parts_source':'FACTORY','preinstalled':True},qty=1,origin='FACTORY');s.add(e);s.flush();return e
 
 def apply(s,u,v,a,p,convert=False):
     from .parts import load
@@ -121,9 +140,15 @@ def apply(s,u,v,a,p,convert=False):
     for row in new['lines']:
         key=row['key'];line=existing.get(key)
         item={**row['item'],'parts_key':key,'part_id':row['part_id'],'parts_source':row['source'],'parts_purpose':row['purpose'],'requires_rack':False}
+        if row.get('preinstalled'):
+            need(not line,'기존 주문의 기본 장착 작업은 관리자 검토 후 연결해야 합니다. 완료 수량은 보존됩니다.')
+            equipment=ensure_preinstalled(s,v,data)
+            need(equipment is not None,'입고 기본 장착 브라켓을 확인하세요.')
+            row['equipment_id']=equipment.id;row['line_id']=None
+            continue
         if row['purpose']=='INSTALL' and row['source']=='WAREHOUSE':
             from .models import Equipment
-            duplicate=any(e.item.get('part_id')==row['part_id'] and (not line or e.line_id!=line.id) for e in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0))) if row['part_id'] else False
+            duplicate=any(e.item.get('part_id')==row['part_id'] and (not line or e.line_id!=line.id) and not (row['part_id']=='RBZ' and e.origin=='FACTORY' and config(data)['models'].get(v.model_id,{}).get('preinstalled_bracket')) for e in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0))) if row['part_id'] else False
             need(not duplicate,'이미 장착된 품목입니다. 기존 장착 확인 또는 실제 교체 작업을 먼저 확인하세요.')
         if not line:
             mid='parts:'+key;m=s.get(Master,mid)
@@ -144,12 +169,22 @@ def prepare_dispatch(s,u,v,a,p):
         if data.get('order_rules'):
             need(u.role=='admin' and str(p.get('stock_exception_reason') or p.get('exception_reason','')).strip(),'기존 주문은 부품 연동 전환 또는 관리자 수동 재고 검수 예외 사유가 필요합니다.')
         return None  # No historical backfill; legacy exceptions remain visibly unlinked.
+    from .equipment_edit import context
+    from .models import Stay
+    st=s.get(Stay,a.stay_id)
+    for equipment in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0)):
+        need(not (v.kind=='NEW' and context(s,equipment,st,a)[2]['order_record']=='cancelled' and equipment.item.get('parts_source')=='WAREHOUSE'),'취소된 주문의 장착품이 남아 있습니다. 차량에 장착된 품목에서 현재 주문으로 연결하거나 잘못된 기록을 취소하세요.')
     need(saved['model_id']==v.model_id,'차종이 변경되었습니다. 부품 계획을 재검토하세요.')
     _,data=load(s);items=itemmap(data);balances={r['id']:r['ending'] for r in report(data,today())['rows']}
     opts,delivery=lines(s,a);actual={l.id:l for l in opts+delivery};used=Counter();result=copy.deepcopy(saved);result['lines']=[]
     for row in saved['lines']:
-        line=actual.get(row['line_id']);need(line is not None,'부품 작업 연결이 없습니다.')
-        q=line.done if row['purpose']=='INSTALL' else line.handed
+        if row.get('preinstalled'):
+            equipment=s.get(Equipment,row.get('equipment_id'))
+            need(equipment and equipment.vehicle_id==v.id and equipment.origin=='FACTORY' and equipment.item.get('part_id')==row['part_id'] and equipment.qty>=row['qty'],'입고 기본 장착 브라켓 기록을 확인하세요.')
+            q=row['qty']
+        else:
+            line=actual.get(row['line_id']);need(line is not None,'부품 작업 연결이 없습니다.')
+            q=line.done if row['purpose']=='INSTALL' else line.handed
         if not q:continue
         i=items.get(row['part_id'])
         if row['part_id']:need(i and i['active'],'사용 중지/미등록 부품을 출고할 수 없습니다.')

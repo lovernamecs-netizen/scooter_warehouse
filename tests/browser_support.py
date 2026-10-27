@@ -3,13 +3,13 @@ from pathlib import Path
 import subprocess,sys,os,tempfile,time,httpx,socket,uuid,shutil,json
 PASSWORD='LocalTestOnly-1234'
 ROOT=Path(__file__).resolve().parents[1]
-RESULTS=ROOT.parent/'data-safety-results';RESULTS.mkdir(exist_ok=True)
+RESULTS=ROOT.parent/'zontes-android-search-results';RESULTS.mkdir(exist_ok=True)
 CHROME=r'C:\Program Files\Google\Chrome\Application\chrome.exe'
 
 def start(port=0,demo=True):
     temp=tempfile.TemporaryDirectory(prefix='warehouse-smoke-')
     directory=Path(temp.name);identity=uuid.uuid4().hex
-    env=dict(os.environ,DATABASE_URL='sqlite:///'+str(directory/'test.db'),WAREHOUSE_ADMIN_PASSWORD=PASSWORD,PYTHONUTF8='1',PYTHONPATH=str(ROOT));env.pop('TEST_DATABASE_URL',None)
+    env=dict(os.environ,DATABASE_URL='sqlite:///'+str(directory/'test.db'),WAREHOUSE_ADMIN_PASSWORD=PASSWORD,PYTHONUTF8='1',PYTHONPATH=str(ROOT));env.pop('TEST_DATABASE_URL',None);env.pop('WAREHOUSE_DATA_DIR',None)
     process=log=None
     try:
         for action in (['init','demo'] if demo else ['init']):

@@ -25,11 +25,14 @@ class Database:
             if schema and schema.value.get('version') not in [1,2]:raise RuntimeError('지원하지 않는 DB schema version: 업그레이드/복구 절차를 확인하세요.')
             if 'manufactured_month' not in {c['name'] for c in inspect(s.connection()).get_columns('vehicles')}:
                 s.execute(text('ALTER TABLE vehicles ADD COLUMN manufactured_month VARCHAR(7)'))
+            columns={c['name'] for c in inspect(s.connection()).get_columns('vehicles')}
+            for column in ['serial_number','ubis_number']:
+                if column not in columns:s.execute(text(f"ALTER TABLE vehicles ADD COLUMN {column} VARCHAR NOT NULL DEFAULT ''"))
             if not schema:s.add(Setting(key='schema_version',value={'version':2}))
             else:schema.value={'version':2}
             from .bundles import catalog
             if seed_catalog:catalog(s)
-            for table in ['outbound','history','closings','adjustments','layout_revisions']:
+            for table in ['outbound','history','closings','adjustments','layout_revisions','vehicle_inventory_snapshots','vehicle_inventory_events','vehicle_valuations','vehicle_inventory_facts','vehicle_inventory_requests','purchase_records','purchase_review_events']:
                 if self.sqlite:
                     for op in ['UPDATE','DELETE']:
                         s.execute(text(f"CREATE TRIGGER IF NOT EXISTS immutable_{table}_{op} BEFORE {op} ON {table} BEGIN SELECT RAISE(ABORT, 'immutable record'); END"))
@@ -47,3 +50,12 @@ class Database:
                 s.commit()
             except Exception:
                 s.rollback(); raise
+
+    @contextmanager
+    def read(self):
+        # WAL readers do not acquire the writer reservation used by commands.
+        with Session(self.engine,expire_on_commit=False) as s:
+            try:
+                if self.sqlite:s.execute(text('BEGIN'))
+                yield s
+            finally:s.rollback()

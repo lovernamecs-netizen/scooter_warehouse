@@ -22,8 +22,12 @@ async function systemCameraPhoto(){
   input.onchange=()=>finish(input.files?.[0]||null);input.addEventListener('cancel',()=>finish(null));input.click();
  });
 }
-export async function capturePhoto(){
- if(/Android/i.test(navigator.userAgent))return await systemCameraPhoto();
+export function startNativeVin(){
+ if(typeof window.WarehouseNative?.scan!=='function')return false;
+ window.WarehouseNative.scan();return true;
+}
+export async function capturePhoto({rearRequired=false}={}){
+ if(!rearRequired&&/Android/i.test(navigator.userAgent))return await systemCameraPhoto();
  const dialog=document.createElement('dialog');dialog.className='capture-dialog';dialog.innerHTML=`<header><strong>사진 촬영</strong><button type="button" data-camera="cancel" aria-label="닫기">✕</button></header><div class="capture-view"><video autoplay playsinline muted></video><span class="capture-resolution"></span><p role="status">카메라 연결 중…</p></div><footer><button type="button" data-camera="cancel">취소</button><button type="button" class="capture-shutter" data-camera="shoot" aria-label="사진 촬영" disabled>${cameraIcon}</button><button type="button" data-camera="file">파일</button></footer><input type="file" accept="image/jpeg,image/png,image/webp" hidden>`;
  document.body.append(dialog);dialog.showModal();let stream=null,done=false,busy=false;
  return await new Promise(resolve=>{
@@ -39,13 +43,13 @@ export async function capturePhoto(){
   }};
   if(!navigator.mediaDevices?.getUserMedia){status.textContent='카메라는 HTTPS 연결이 필요합니다. 파일을 선택할 수 있습니다.';return}
   (async()=>{try{
-   const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:4096},height:{ideal:3072}},audio:false});
+   const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:rearRequired?{exact:'environment'}:{ideal:'environment'},width:{ideal:4096},height:{ideal:3072}},audio:false});
    if(done){s.getTracks().forEach(t=>t.stop());return}stream=s;const track=s.getVideoTracks()[0];
    try{const caps=track.getCapabilities?.()||{};const constraints={};for(const key of ['width','height'])if(caps[key]?.max>0)constraints[key]={ideal:caps[key].max};if(Object.keys(constraints).length)await track.applyConstraints(constraints);}catch{}
    if(done)return;
    const ready=()=>{if(done||!video.videoWidth)return;status.hidden=true;shutter.disabled=false;dialog.querySelector('.capture-resolution').textContent='미리보기 '+video.videoWidth+' × '+video.videoHeight;};
    video.onloadedmetadata=ready;video.onresize=ready;video.srcObject=s;await video.play();ready();
-  }catch{if(!done){stream?.getTracks().forEach(t=>t.stop());status.hidden=false;status.textContent='카메라 권한을 확인하세요. 파일 선택도 가능합니다.';}}})();
+  }catch{if(!done){stream?.getTracks().forEach(t=>t.stop());status.hidden=false;status.textContent=rearRequired?'후면 카메라를 열 수 없습니다. 카메라 권한을 확인하거나 파일에서 VIN 사진을 선택하세요.':'카메라 권한을 확인하세요. 파일 선택도 가능합니다.';}}})();
  });
 }
 export function fileBase64(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onerror=()=>reject(Error('사진을 읽을 수 없습니다.'));r.onload=()=>resolve(String(r.result).split(',')[1]);r.readAsDataURL(file)})}

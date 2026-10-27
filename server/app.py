@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI,Request,HTTPException,UploadFile,File,Form
 from fastapi.responses import JSONResponse,Response,FileResponse,StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from .db import Database
@@ -22,14 +23,18 @@ def create_app(database=None):
             from .storage_paths import require_existing
             require_existing(db.engine)
         db.init();stop=threading.Event();thread=threading.Thread(target=scheduler,args=(db,stop),daemon=True);thread.start()
+        from .vehicle_inventory import scheduler as inventory_scheduler
+        inventory_thread=threading.Thread(target=inventory_scheduler,args=(db,stop),daemon=True);inventory_thread.start()
         try:yield
-        finally:stop.set();thread.join(timeout=2)
+        finally:stop.set();thread.join(timeout=2);inventory_thread.join(timeout=5)
     app=FastAPI(title='Scooter Warehouse',version='1.0.31',lifespan=lifespan)
     app.state.db=db
     from .errors import install
     install(app,db)
     attempts={};attempt_lock=threading.Lock()
     def user(s,request):return authorize(s,request.headers.get('Authorization','').removeprefix('Bearer '))
+    from .google_login import install as install_google_login
+    install_google_login(app,db,user)
     @app.exception_handler(IntegrityError)
     async def integrity(request,exc):return JSONResponse(status_code=409,content={'detail':'중복 등록 또는 다른 기기와의 충돌입니다. 최신 정보를 다시 확인하세요.'})
     @app.exception_handler(KeyError)
@@ -198,6 +203,125 @@ def create_app(database=None):
     @app.post('/api/command')
     def mutate(body:dict,request:Request):
         with db.transaction() as s:return command(s,user(s,request),body)
+    @app.post('/api/tools/registration-ocr')
+    def launch_registration_ocr(request:Request,p:dict):
+        with db.read() as s:
+            u=user(s,request)
+            from .external_ocr import launch
+            return launch(request,u)
+    @app.get('/api/tools/registration-ocr/installer')
+    def ocr_installer(request:Request):
+        with db.read() as s:user(s,request)
+        from .external_ocr import installer
+        return FileResponse(installer(),media_type='application/zip',filename='ScooterWarehouse-OCR-Connect.zip',headers={'Cache-Control':'no-store'})
+    @app.post('/api/purchases/google')
+    def purchase_google(request:Request,p:dict):
+        with db.read() as s:
+            u=user(s,request);ident=u.id;need(u.role in ['admin','worker'],'구매 자료 접근 권한이 없습니다.',403)
+        from .google_purchase import read
+        from .google_login import token,connection_key
+        return read(p.get('url',''),p.get('sheet',''),access_token=token(connection_key(ident,request)))
+    @app.post('/api/purchases/xlsx')
+    async def purchase_xlsx(request:Request,file:UploadFile=File(...)):
+        with db.read() as s:
+            u=user(s,request);need(u.role in ['admin','worker'],'구매 자료 접근 권한이 없습니다.',403)
+        data=await file.read(20_000_001)
+        from .purchase_xlsx import parse
+        return await run_in_threadpool(parse,data,file.filename or '')
+    @app.get('/api/purchases/review')
+    def purchase_review_list(request:Request):
+        from .purchase_review import view
+        with db.transaction() as s:
+            u=user(s,request);need(u.role in ['admin','worker'],'접근 권한이 없습니다.',403)
+            return view(s)
+    @app.post('/api/purchases/review')
+    def purchase_review_mutate(request:Request,p:dict):
+        from .purchase_review import mutate
+        with db.transaction() as s:return mutate(s,user(s,request),p)
+    @app.post('/api/purchases/import')
+    def purchase_import_all(request:Request,p:dict):
+        from .purchase_review import import_all
+        with db.transaction() as s:return import_all(s,user(s,request),p)
+    @app.post('/api/purchases/source-scan')
+    def purchase_source_scan(request:Request,p:dict):
+        from .purchase_month import store_source
+        with db.transaction() as s:return store_source(s,user(s,request),p)
+    @app.get('/api/purchases/month-history')
+    def purchase_month_history(request:Request,month:str):
+        from .purchase_month import approvals
+        with db.read() as s:return approvals(s,user(s,request),month)
+    @app.get('/api/purchases/month-snapshot/{ident}')
+    def purchase_month_snapshot(ident:str,request:Request,page:int=0):
+        from .purchase_month import approved_snapshot
+        with db.read() as s:return approved_snapshot(s,user(s,request),ident,page)
+    @app.get('/api/purchases/month')
+    def purchase_month(request:Request,month:str,page:int=0,namespace:str=''):
+        from .purchase_month import scan
+        with db.read() as s:return scan(s,user(s,request),month,page,namespace)
+    @app.post('/api/purchases/month')
+    def purchase_month_confirm(request:Request,p:dict):
+        from .purchase_month import confirm
+        with db.transaction() as s:return confirm(s,user(s,request),p)
+    @app.get('/api/purchases/source-review')
+    def purchase_source_review(request:Request,namespace:str,through:int):
+        from .purchase_bookmark import review
+        with db.read() as s:
+            result=review(s,user(s,request),namespace,through)
+            result.pop('bindings',None);return result
+    @app.post('/api/purchases/source-review')
+    def purchase_source_confirm(request:Request,p:dict):
+        from .purchase_bookmark import confirm
+        with db.transaction() as s:return confirm(s,user(s,request),p)
+    @app.get('/api/purchases/sources')
+    def purchase_sources(request:Request):
+        from .purchase_queries import sources
+        with db.read() as s:return sources(s,user(s,request))
+    @app.get('/api/purchases/conflicts')
+    def purchase_conflicts(request:Request,page:int=0):
+        from .purchase_review import conflicts
+        with db.read() as s:return conflicts(s,user(s,request),page)
+    @app.get('/api/purchases/review-summary')
+    def purchase_review_summary(request:Request,through:str,page:int=0):
+        from .purchase_review import summary
+        with db.read() as s:return summary(s,user(s,request),through,page)
+    @app.get('/api/purchases/page')
+    def purchase_page(request:Request,month:str,selected:str='',page:int=0,filters:str='{}',deleted:bool=False):
+        from .purchase_queries import page as query
+        with db.read() as s:return query(s,user(s,request),month,selected,page,filters,deleted)
+    @app.get('/api/purchases/history/{ident}')
+    def purchase_history(ident:str,request:Request,page:int=0):
+        from .purchase_queries import history
+        with db.read() as s:return history(s,user(s,request),ident,page)
+    @app.get('/api/purchases/requests/{ident}')
+    def purchase_request_status(ident:str,request:Request):
+        with db.read() as s:
+            u=user(s,request);entry=s.get(Command,ident)
+            need(not entry or entry.user_id==u.id,'다른 계정의 요청입니다.',403)
+            return {'state':'committed' if entry else 'unconfirmed','result':entry.result if entry else None}
+    @app.get('/api/purchases')
+    def purchase_list(request:Request):
+        from .purchase_sheet import listing
+        with db.read() as s:return listing(s,user(s,request))
+    @app.post('/api/purchases/preview')
+    def purchase_preview(request:Request,p:dict):
+        from .purchase_sheet import preview
+        with db.read() as s:return preview(s,user(s,request),p)
+    @app.post('/api/purchases/apply')
+    def purchase_apply(request:Request,p:dict):
+        from .purchase_sheet import apply
+        with db.transaction() as s:return apply(s,user(s,request),p)
+    @app.get('/api/vehicle-inventory')
+    def vehicle_inventory_view(request:Request,day:str,month:str):
+        from .vehicle_inventory import view
+        with db.transaction() as s:return view(s,user(s,request),day,month)
+    @app.get('/api/vehicle-inventory/candidates')
+    def vehicle_inventory_candidates(request:Request,day:str):
+        from .vehicle_inventory import candidates
+        with db.transaction() as s:return candidates(s,user(s,request),day)
+    @app.post('/api/vehicle-inventory/command')
+    def vehicle_inventory_command(request:Request,p:dict):
+        from .vehicle_inventory import mutate
+        with db.transaction() as s:return mutate(s,user(s,request),p)
     @app.get('/api/report/{day}')
     def daily(day:str,request:Request):
         with db.transaction() as s:
@@ -234,7 +358,7 @@ def create_app(database=None):
             vehicles=[vehicle_dto(s,v,u) for v in rows(s,Vehicle)]
             data={'VEHICLES':[{k:v for k,v in x.items() if k not in ['smart_key','assignment','equipment','location']} for x in vehicles], 'CURRENT_STOCK':[{'vehicle_id':x['id'],'vin':x['vin'],'model':x['model'],'color':x['color'],'state':x['state'],'location':x['location'],'scheduled':x['assignment']['scheduled'] if x['assignment'] else ''} for x in vehicles if x['stay_id']]}
             # Relational exchange tabs; credentials and session/command tables are never exported.
-            for name,cls in [('MASTERS',Master),('STOCK_STAYS',Stay),('ORDERS',Order),('ORDER_VEHICLES',Assignment),('ORDER_OPTIONS',OptionLine),('DELIVERY_ITEMS',DeliveryLine),('VEHICLE_EQUIPMENT',Equipment),('ZONES',Zone),('LOCATIONS',Slot),('LAYOUT_REVISIONS',LayoutRevision),('OUTBOUND',Outbound),('VEHICLE_HISTORY',History),('OUTBOUND_ADJUSTMENTS',Adjustment),('DAILY_CLOSINGS',Closing)]:
+            for name,cls in [('MASTERS',Master),('STOCK_STAYS',Stay),('ORDERS',Order),('ORDER_VEHICLES',Assignment),('ORDER_OPTIONS',OptionLine),('DELIVERY_ITEMS',DeliveryLine),('VEHICLE_EQUIPMENT',Equipment),('ZONES',Zone),('LOCATIONS',Slot),('LAYOUT_REVISIONS',LayoutRevision),('OUTBOUND',Outbound),('VEHICLE_HISTORY',History),('OUTBOUND_ADJUSTMENTS',Adjustment),('DAILY_CLOSINGS',Closing),('VEHICLE_STOCK_SNAPSHOTS',VehicleInventorySnapshot),('VEHICLE_STOCK_EVENTS',VehicleInventoryEvent),('VEHICLE_PRICES',VehicleValuation),('VEHICLE_STOCK_FACTS',VehicleInventoryFact),('PURCHASE_RECORDS',PurchaseRecord)]:
                 data[name]=[{c.name:(iso(getattr(r,c.name)) if isinstance(getattr(r,c.name),datetime) else getattr(r,c.name)) for c in cls.__table__.columns} for r in rows(s,cls)]
             warehouse_layout=layout(s)
             data['WAREHOUSES']=warehouse_layout['warehouses']

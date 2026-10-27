@@ -83,7 +83,7 @@ def vehicle_dto(s,v,u=None):
     a=assignment(s,st) if st else None
     loc=location(s,st)
     state=('보관처리' if v.archived else '출고완료') if not st else ('출고대기' if a and a.ready else {'PENDING':'작업대기','IN_PROGRESS':'작업중','COMPLETED':'작업완료'}.get(a.work) if a else '재고' if loc and loc.get('zone_id') and get(s,Zone,loc['zone_id']).kind in ['STORAGE','USED'] else '배치대기' if v.ubis=='INSTALLED' else '유비스 대기')
-    result={'id':v.id,'vin':'' if v.vin.startswith('@PENDING:') else v.vin,'vin_pending':v.vin.startswith('@PENDING:'),'reference':'임시-'+v.id[:8],'model_id':v.model_id,'model':model.name,'brand':brand.name if brand else '', 'brand_id':brand.id if brand else '', 'color_id':v.color_id,'color':color.name,'color_hex':color.detail.get('hex','#94a3b8'),'year':v.year,'manufactured_month':v.manufactured_month,'kind':v.kind,'plate':v.plate,'smart_key':v.smart_key if not u or u.role in ['admin','worker'] else '', 'notes':v.notes,'ubis':v.ubis,'version':v.version,'archived':v.archived,'stay_id':st.id if st else None,'received_at':iso(st.received_at) if st else None,'location':loc,'state':state,'assignment':None}
+    result={'id':v.id,'vin':'' if v.vin.startswith('@PENDING:') else v.vin,'vin_pending':v.vin.startswith('@PENDING:'),'reference':'임시-'+v.id[:8],'model_id':v.model_id,'model':model.name,'brand':brand.name if brand else '', 'brand_id':brand.id if brand else '', 'color_id':v.color_id,'color':color.name,'color_hex':color.detail.get('hex','#94a3b8'),'year':v.year,'manufactured_month':v.manufactured_month,'kind':v.kind,'plate':v.plate,'smart_key':v.smart_key if not u or u.role in ['admin','worker'] else '', 'serial_number':v.serial_number,'ubis_number':v.ubis_number,'notes':v.notes,'ubis':v.ubis,'version':v.version,'archived':v.archived,'stay_id':st.id if st else None,'received_at':iso(st.received_at) if st else None,'location':loc,'state':state,'assignment':None}
     if a:
         opts,items=lines(s,a);o=get(s,Order,a.order_id)
         from .parts_orders import plan
@@ -92,6 +92,9 @@ def vehicle_dto(s,v,u=None):
         from .used_stock import summary
         result['used_stock']=summary(s,st)
     result['equipment']=[{'id':e.id,'item':e.item,'qty':e.qty,'origin':e.origin,'line_id':e.line_id} for e in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0))]
+    from .equipment_edit import context
+    for item in result['equipment']:
+        item.update(context(s,s.get(Equipment,item['id']),st,a)[2] if u and u.role in ['admin','worker'] and v.kind=='NEW' else {'can_correct':False,'can_carry':False})
     return result
 def layout(s):
     cfg=wh.config(s)
@@ -121,6 +124,8 @@ def report(s,d):
     result={'day':d,'received':sum(day(x.received_at)==d and x.reason!='VOID' for x in sts),'ubis':len({h.vehicle_id for h in hist if h.event=='UBIS_INSTALLED' and day(h.at)==d}),'placed':sum(x.first_placed_at is not None and day(x.first_placed_at)==d for x in sts),'dispatched':len(outs),'current_stock':sum(x.closed_at is None for x in sts),'end_stock':sum(x.received_at.replace(tzinfo=timezone.utc)<end and (x.closed_at is None or x.closed_at.replace(tzinfo=timezone.utc)>=end) for x in sts),'models':dict(models),'options':dict(options),'new_options':dict(new_options),'items':dict(items),'next_day':nextday,'next_total':len(nxt),'next_completed':sum(a.work=='COMPLETED' for a in nxt),'adjustments':adjustments,'outbounds':[{'id':o.id,'at':iso(o.at),'vin':o.snapshot['vehicle']['vin'],'model':o.snapshot['vehicle']['model']} for o in outs]}
     from .parts_orders import daily
     result['parts_daily']=daily(s,d)
+    from .business_report import report as business_report
+    result['business']=business_report(s,d)
     c=s.get(Closing,d)
     return {**result,'closing':{'at':iso(c.at),'actor':c.actor,'snapshot':c.snapshot} if c else None}
 
@@ -129,12 +134,14 @@ def receive(s,u,p):
     need(p.get('model_id'),'차종을 선택하세요.');need(p.get('color_id'),'색상을 선택하세요.')
     master(s,p['model_id'],'model');master(s,p['color_id'],'color')
     year=qty(p.get('year'),1900,2100);kind=p.get('kind','NEW');need(kind in ['NEW','USED'],'신차/중고를 선택하세요.')
-    v=Vehicle(vin=vvin,model_id=p['model_id'],color_id=p['color_id'],year=year,manufactured_month=manufactured_month(p.get('manufactured_month')),kind=kind,plate=clean(p.get('plate','')),smart_key=clean(p.get('smart_key','')),notes=clean(p.get('notes',''),4000),ubis='UNKNOWN' if kind=='USED' else 'NOT_INSTALLED')
+    v=Vehicle(vin=vvin,model_id=p['model_id'],color_id=p['color_id'],year=year,manufactured_month=manufactured_month(p.get('manufactured_month')),kind=kind,plate=clean(p.get('plate','')),smart_key=clean(p.get('smart_key','')),notes=clean(p.get('notes',''),4000),serial_number=clean(p.get('serial_number',''),120),ubis_number=clean(p.get('ubis_number',''),120),ubis='UNKNOWN' if kind=='USED' else 'NOT_INSTALLED')
     s.add(v);s.flush();st=Stay(vehicle_id=v.id)
     if p.get('received_date'):
         dt=valid_date(p['received_date']);need(dt<=today(),'미래 입고일은 등록할 수 없습니다.')
         st.received_at=datetime.combine(date.fromisoformat(dt),now().astimezone(KST).time().replace(tzinfo=None),KST).astimezone(timezone.utc)
     s.add(st);audit(s,u,'RECEIVED',{'received_date':p.get('received_date',today()),'vin_pending':v.vin.startswith('@PENDING:')},v);s.flush()
+    from .parts_orders import ensure_preinstalled
+    ensure_preinstalled(s,v)
     if p.get('ubis_installed'):
         execute(s,u,'ubis',{'vehicle_id':v.id,'version':v.version,'status':'INSTALLED'})
     if p.get('slot_id'):
@@ -319,7 +326,7 @@ def execute(s,u,action,p):
         if 'vin' in p and p['vin']!=('' if v.vin.startswith('@PENDING:') else v.vin):
             if not v.vin.startswith('@PENDING:'):admin(u);need(clean(p.get('reason','')),'VIN 변경 사유가 필요합니다.')
             new=vin(p['vin']);need(s.scalar(select(Vehicle).where(Vehicle.vin==new,Vehicle.id!=v.id)) is None,'등록된 VIN입니다.',409);audit(s,u,'VIN_CHANGED',{'old':'' if v.vin.startswith('@PENDING:') else v.vin,'new':new,'reason':p.get('reason','최초 VIN 등록')},v);v.vin=new
-        for k in ['plate','smart_key','notes']:
+        for k in ['plate','smart_key','notes','serial_number','ubis_number']:
             if k in p:setattr(v,k,clean(p[k],4000))
         if 'model_id' in p:
             master(s,p['model_id'],'model')
@@ -469,6 +476,9 @@ def execute(s,u,action,p):
                 confirmed_existing=line.item.get('parts_source')=='EXISTING' and line.item.get('part_id') and any(x.line_id!=line.id and x.item.get('part_id')==line.item['part_id'] for x in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0)))
                 if not e and not confirmed_existing:e=Equipment(vehicle_id=v.id,line_id=line.id,item=line.item,origin={'FACTORY':'FACTORY','EXISTING':'EXISTING'}.get(line.item.get('parts_source'),'NEW'),qty=0);s.add(e)
                 if e:e.qty=0 if confirmed_existing else line.done
+                if line.done and line.item.get('part_id')=='RBZ' and line.item.get('parts_source')=='WAREHOUSE':
+                    for old_equipment in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.origin=='FACTORY',Equipment.qty>0)):
+                        if old_equipment.item.get('part_id')=='RBZ':old_equipment.qty=0
             else:line.handed=min(line.handed,line.done)
             audit(s,u,'WORK_CHECKED',{'kind':p['kind'],'line_id':line.id,'done':line.done},v)
         else:
@@ -489,6 +499,9 @@ def execute(s,u,action,p):
                 s.flush();a.ready=True
             else:a.work='COMPLETED';a.ready=False
             audit(s,u,'READY' if action=='ready' else 'WORK_COMPLETED',{'from':before,'to':location(s,st)} if action=='ready' else {},v)
+    elif action=='equipment_edit':
+        from .equipment_edit import edit
+        edit(s,u,v,st,a,p)
     elif action=='equipment':
         # Existing used equipment can be entered or removed without becoming a new order installation.
         if p.get('id'):
@@ -519,7 +532,7 @@ def execute(s,u,action,p):
         current_lines={l.id for l in opts}
         from .parts_orders import prepare_dispatch,post_dispatch
         parts_snapshot=prepare_dispatch(s,u,v,a,p)
-        out=Outbound(stay_id=st.id,vehicle_id=v.id,day=today(),snapshot={'schema_version':1,'parts_order':parts_snapshot,'parts_inventory_status':'POSTED' if parts_snapshot else 'LEGACY_REVIEW_REQUIRED','stock_exception_reason':p.get('stock_exception_reason',''),'vehicle':snap,'options':[{'item':e.item,'qty':e.qty,'origin':('NEW' if e.item.get('parts_source','WAREHOUSE')=='WAREHOUSE' else e.item['parts_source']) if e.line_id in current_lines else 'EXISTING'} for e in equipment],'items':[{'item':l.item,'qty':l.handed} for l in items if l.handed>0],'actor':u.username,'exception_reason':reason,'missing':missing})
+        out=Outbound(stay_id=st.id,vehicle_id=v.id,day=today(),snapshot={'schema_version':1,'parts_order':parts_snapshot,'parts_inventory_status':'POSTED' if parts_snapshot else 'LEGACY_REVIEW_REQUIRED','stock_exception_reason':p.get('stock_exception_reason',''),'vehicle':snap,'options':[{'item':e.item,'qty':e.qty,'origin':'FACTORY' if e.origin=='FACTORY' else (('NEW' if e.item.get('parts_source','WAREHOUSE')=='WAREHOUSE' else e.item['parts_source']) if e.line_id in current_lines else 'EXISTING')} for e in equipment],'items':[{'item':l.item,'qty':l.handed} for l in items if l.handed>0],'actor':u.username,'exception_reason':reason,'missing':missing})
         s.add(out);st.closed_at=now();a.status='FULFILLED';a.ready=False
         place=s.get(Placement,st.id)
         if place:s.delete(place)
@@ -538,5 +551,10 @@ def command(s,u,body):
     digest=hashlib.sha256(json.dumps({'action':action,'payload':p},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     old=s.get(Command,cid)
     if old:need(old.digest==digest and old.user_id==u.id,'명령 ID가 다른 요청에서 사용됐습니다.',409);return old.result
-    result=execute(s,u,action,p);get(s,Guard,1).revision+=1
+    from .vehicle_inventory import capture,record_changes
+    tracked=action in ['receive','import_apply','vehicle_edit','used_record','adjust_outbound','reenter','master']
+    before=capture(s) if tracked else None
+    result=execute(s,u,action,p)
+    if tracked:record_changes(s,before,u.username)
+    get(s,Guard,1).revision+=1
     s.add(Command(id=cid,digest=digest,user_id=u.id,result=result));s.flush();return result
