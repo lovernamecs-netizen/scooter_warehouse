@@ -10,7 +10,7 @@ import {safeMessage,showError} from './errors.js';
 import {installVehicleHold} from './vehicle-hold.js';
 import {mountPlan,dailyPartsHTML} from './order-parts-ui.js';
 import {photoStorage} from './photo-storage.js';
-import {startNativeVin,capturePhoto,previewBase64,ocrBase64,recognizeVin} from './camera.js';
+import {capturePhoto,previewBase64,ocrBase64,recognizeVin} from './camera.js?v=20261027-system-vin-v1';
 import {createUsedStock} from './used-stock.js';
 import {installNotifications} from './notifications.js';
 import {renderParts} from './parts.js';
@@ -168,7 +168,6 @@ async function moveConfirm(id,slotId){const v=vehicle(id),z=S.layout.zones.find(
 
 async function scan(context='search',id=''){
  window.scanContext={context,id};
- if(startNativeVin())return;
  const file=await capturePhoto({rearRequired:true});if(!file)return;
  try{const preview=await previewBase64(file),result=await recognizeVin(api,await ocrBase64(file));window.onNativeVin({...result,preview});}catch(e){toast(e.message)}
 }

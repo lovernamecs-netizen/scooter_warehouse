@@ -1,31 +1,41 @@
-import json,httpx
+"""Regression: Android VIN uses OS camera file capture, never the legacy native scan UI."""
+import io,json
+from PIL import Image
 from playwright.sync_api import sync_playwright,expect
-from browser_support import start,stop,CHROME,PASSWORD,RESULTS
+from browser_support import start,stop,CHROME,PASSWORD
 runtime=start(demo=True)
+photo=io.BytesIO();Image.new('RGB',(100,60),'white').save(photo,'JPEG')
+vin='MLHJK05A1P5000001'
 try:
- c=httpx.Client(base_url=runtime[3],trust_env=False)
- token=c.post('/api/login',json={'username':'admin','password':PASSWORD}).json()['token']
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path=CHROME,headless=True)
-  page=browser.new_page(viewport={'width':390,'height':844})
-  page.goto(runtime[3]);page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload()
-  page.evaluate('window.nativeCalls=0;window.WarehouseNative={scan(){window.nativeCalls++}}')
-  page.locator('[data-act=scan]:visible').first.click()
-  assert page.evaluate('window.nativeCalls')==1
-  assert page.locator('.capture-dialog').count()==0
-  page.evaluate('window.onNativeVin({raw:"MLHJK05A1P5000001",candidates:["MLHJK05A1P5000001"]})')
-  expect(page.locator('#scan-vin')).to_have_value('MLHJK05A1P5000001')
-  page.locator('[data-act=scan-again]').click();assert page.evaluate('window.nativeCalls')==2
-  page.locator('#modal [data-act=close]').first.click()
-  page.evaluate('''async()=>{delete window.WarehouseNative;
-   navigator.mediaDevices.getUserMedia=async c=>{window.cameraConstraints=c;throw new DOMException('No rear camera','OverconstrainedError')};
-   const m=await import('/camera.js');window.photoPromise=m.capturePhoto({rearRequired:true});}''')
+  for native in (True,False):
+   context=browser.new_context(user_agent='Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36',viewport={'width':390,'height':844})
+   page=context.new_page();page.goto(runtime[3]);page.locator('[name=username]').fill('admin');page.locator('[name=password]').fill(PASSWORD);page.locator('#login button').click()
+   page.evaluate("()=>{window.legacyCalls=0;window.mediaCalls=0;navigator.mediaDevices.getUserMedia=async()=>{window.mediaCalls++;throw Error('Unexpected custom camera')}}")
+   if native:
+    page.evaluate("window.WarehouseNative={scan(){window.legacyCalls++},recognizeImage(image){window.nativeImage=image;window.onWarehouseOCR({raw:'MLHJK05A1P5000001',candidates:['MLHJK05A1P5000001']})}}")
+   else:
+    page.route('**/api/vin/ocr',lambda route:route.fulfill(json={'raw':vin,'candidates':[vin]}))
+   for selector in ('[data-act=scan]:visible','[data-act=scan-again]'):
+    with page.expect_file_chooser() as chosen:page.locator(selector).first.click()
+    chooser=chosen.value
+    assert chooser.element.get_attribute('capture')=='environment'
+    assert chooser.element.get_attribute('accept')=='image/*'
+    chooser.set_files({'name':'synthetic-vin.jpg','mimeType':'image/jpeg','buffer':photo.getvalue()})
+    expect(page.locator('#scan-vin')).to_have_value(vin)
+    assert page.evaluate('window.legacyCalls===0 && window.mediaCalls===0')
+    assert page.locator('.capture-dialog').count()==0
+   if native:assert page.evaluate('window.nativeImage.length>0')
+   with page.expect_file_chooser() as chosen:page.locator('[data-act=scan-again]').click()
+   chosen.value.set_files([])
+   assert page.locator('input[type=file][capture]').count()==0
+   context.close()
+  page=browser.new_page();page.goto(runtime[3])
+  page.evaluate("""async()=>{navigator.mediaDevices.getUserMedia=async c=>{window.cameraConstraints=c;throw new DOMException('No rear camera','OverconstrainedError')};const m=await import('/camera.js');window.photoPromise=m.capturePhoto({rearRequired:true});}""")
   expect(page.locator('.capture-dialog [role=status]')).to_contain_text('후면 카메라를 열 수 없습니다')
-  assert page.evaluate('window.cameraConstraints.video.facingMode.exact')=='environment'
-  page.locator('[data-camera=cancel]').first.click()
-  assert page.evaluate('window.photoPromise') is None
+  assert page.evaluate("window.cameraConstraints.video.facingMode.exact")=='environment'
+  page.locator('[data-camera=cancel]').first.click();assert page.evaluate('window.photoPromise') is None
   browser.close()
- (RESULTS/'vin-rear-browser.json').write_text(json.dumps({'passed':True,'checks':['native scan routing','OCR result','retake routing','web exact environment constraint','no front fallback','cancel'],'physical_device_verified':False}),encoding='utf-8')
- print('PASS VIN rear-camera routing and browser constraints; physical hardware not tested')
+ print('PASS Android APK/browser routing, rear capture hint, image OCR, retake, cancel; PC rear-only capture preserved. Physical Android camera not tested.')
 finally:stop(runtime)
-

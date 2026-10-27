@@ -22,12 +22,8 @@ async function systemCameraPhoto(){
   input.onchange=()=>finish(input.files?.[0]||null);input.addEventListener('cancel',()=>finish(null));input.click();
  });
 }
-export function startNativeVin(){
- if(typeof window.WarehouseNative?.scan!=='function')return false;
- window.WarehouseNative.scan();return true;
-}
 export async function capturePhoto({rearRequired=false}={}){
- if(!rearRequired&&/Android/i.test(navigator.userAgent))return await systemCameraPhoto();
+ if(/Android/i.test(navigator.userAgent))return await systemCameraPhoto();
  const dialog=document.createElement('dialog');dialog.className='capture-dialog';dialog.innerHTML=`<header><strong>사진 촬영</strong><button type="button" data-camera="cancel" aria-label="닫기">✕</button></header><div class="capture-view"><video autoplay playsinline muted></video><span class="capture-resolution"></span><p role="status">카메라 연결 중…</p></div><footer><button type="button" data-camera="cancel">취소</button><button type="button" class="capture-shutter" data-camera="shoot" aria-label="사진 촬영" disabled>${cameraIcon}</button><button type="button" data-camera="file">파일</button></footer><input type="file" accept="image/jpeg,image/png,image/webp" hidden>`;
  document.body.append(dialog);dialog.showModal();let stream=null,done=false,busy=false;
  return await new Promise(resolve=>{
