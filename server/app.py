@@ -203,17 +203,6 @@ def create_app(database=None):
     @app.post('/api/command')
     def mutate(body:dict,request:Request):
         with db.transaction() as s:return command(s,user(s,request),body)
-    @app.post('/api/tools/registration-ocr')
-    def launch_registration_ocr(request:Request,p:dict):
-        with db.read() as s:
-            u=user(s,request)
-            from .external_ocr import launch
-            return launch(request,u)
-    @app.get('/api/tools/registration-ocr/installer')
-    def ocr_installer(request:Request):
-        with db.read() as s:user(s,request)
-        from .external_ocr import installer
-        return FileResponse(installer(),media_type='application/zip',filename='ScooterWarehouse-OCR-Connect.zip',headers={'Cache-Control':'no-store'})
     @app.post('/api/purchases/google')
     def purchase_google(request:Request,p:dict):
         with db.read() as s:

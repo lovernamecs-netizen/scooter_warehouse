@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess,sys,os,tempfile,time,httpx,socket,uuid,shutil,json
 PASSWORD='LocalTestOnly-1234'
 ROOT=Path(__file__).resolve().parents[1]
-RESULTS=ROOT.parent/'zontes-android-search-results';RESULTS.mkdir(exist_ok=True)
+RESULTS=ROOT.parent/'purchase-sheet-results';RESULTS.mkdir(exist_ok=True)
 CHROME=r'C:\Program Files\Google\Chrome\Application\chrome.exe'
 
 def start(port=0,demo=True):

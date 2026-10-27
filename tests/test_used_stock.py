@@ -46,7 +46,7 @@ def test_photo_access_conflict_equipment_invalidation_and_backup(env,tmp_path):
  result=c.post('/api/command',headers=vh,json={'command_id':str(uuid.uuid4()),'action':'used_photo','payload':{'vehicle_id':ident,'version':v(ident)['version'],'view':'front','jpeg':photo()}});assert result.status_code==403
  vc('used_media',ident,{'category':'intake','key':'whole','original':photo(),'preview':photo()});vc('used_photo',ident,{'view':'front','jpeg':photo()});root=Path(__file__).resolve().parents[1];backup=tmp_path/'used.swh';target='sqlite:///'+str(tmp_path/'restored.db')
  for action,url in [('backup',str(db.engine.url)),('restore',target)]:
-  r=subprocess.run([sys.executable,'-m','server.cli',action,'--file',str(backup)],cwd=root,env=dict(os.environ,DATABASE_URL=url,WAREHOUSE_BACKUP_PASSWORD='used-backup-password-123'),capture_output=True,text=True);assert r.returncode==0,r.stdout+r.stderr
+  r=subprocess.run([sys.executable,'-m','server.cli',action,'--file',str(backup)],cwd=root,env=dict(os.environ,PYTHONUTF8='1',DATABASE_URL=url,WAREHOUSE_BACKUP_PASSWORD='used-backup-password-123'),capture_output=True,text=True,encoding='utf-8');assert r.returncode==0,r.stdout+r.stderr
  from server.db import Database
  restored=Database(target);restored.init()
  with restored.transaction() as s:

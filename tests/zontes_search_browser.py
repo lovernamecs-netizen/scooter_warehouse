@@ -27,6 +27,10 @@ try:
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path=CHROME,headless=True);page=browser.new_page(viewport={'width':1366,'height':900});errors=observe(page,'search-and-zontes')
   page.goto(runtime[3]);assert page.locator('.login').count();page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload()
+  def navigate(name):
+   link=page.locator('.sidebar [data-page="'+name+'"]');section=link.locator('..');
+   if section.get_attribute('open') is None:section.locator('summary').click()
+   link.click()
   query=page.locator('#global-search');query.fill(' 0001 ');page.locator('#global-search-form button').click();expect(page.locator('#content .badge').first).to_have_text('2');expect(page.locator('#modal')).not_to_be_visible()
   page.locator('#global-search').fill(' mlhjk05a1p5000001 ');page.locator('#global-search').press('Enter');expect(page.locator('#content .badge').first).to_have_text('1');expect(page.locator('#global-search')).to_have_value('MLHJK05A1P5000001')
   page.locator('#list-search').fill('9999');page.locator('#list-search-form button[type=submit]').click();expect(page.locator('#content')).to_contain_text('검색 결과가 없습니다.')
@@ -36,10 +40,10 @@ try:
   page.locator(f'[data-act=detail][data-id="{ids[0]}"]').first.click();expect(page.locator('#modal')).to_contain_text('입고 기본 장착');page.locator('[data-act=assign][data-channel=B2B]').click();expect(page.locator('[data-plan-result]')).to_contain_text('토시');expect(page.locator('[data-plan-result]')).to_contain_text('입고 기본 장착 · 작업 없음');page.locator('[data-op=set]').select_option('TOP01');page.locator('[data-plan-preview]').click();page.locator('[data-act=save-assign]').click();expect(page.locator('#modal')).to_contain_text('주문 ow')
   a=vehicle(ids[0])['assignment'];assert {l['item']['part_id'] for l in a['options']}=={'SC','CUP','MITT','ST01'};assert not any(l['item']['part_id']=='RBZ' for l in a['options']);page.screenshot(path=str(RESULTS/'zontes-work.png'))
   for l in a['options']:vc('work_line',ids[0],kind='options',line_id=l['id'],done=l['qty'])
-  vc('dispatch',ids[0],exception_reason='synthetic dispatch',handed={});page.evaluate('document.querySelector("#modal").close()');page.reload();page.locator('[data-act=nav][data-page=outbound]').first.click();page.locator('#global-search').fill('0001');page.locator('#global-search-form button').click();expect(page.locator('#content h1')).to_have_text('출고이력');expect(page.locator('[data-act=out-detail]')).to_have_count(1)
-  page.locator('[data-act=nav][data-page=parts]').first.click();page.locator('.dispatch-vehicle summary').click();expect(page.locator('.dispatch-vehicle')).to_contain_text('입고 기본 장착품 · 차감 없음');page.screenshot(path=str(RESULTS/'zontes-summary.png'))
+  vc('dispatch',ids[0],exception_reason='synthetic dispatch',handed={});page.evaluate('document.querySelector("#modal").close()');page.reload();navigate('outbound');page.locator('#global-search').fill('0001');page.locator('#global-search-form button').click();expect(page.locator('#content h1')).to_have_text('출고이력');expect(page.locator('[data-act=out-detail]')).to_have_count(1)
+  navigate('parts');page.locator('.dispatch-vehicle summary').click();expect(page.locator('.dispatch-vehicle')).to_contain_text('입고 기본 장착품 · 차감 없음');page.screenshot(path=str(RESULTS/'zontes-summary.png'))
   # Rapid submissions are handled once; search never confirms a vehicle automatically.
-  page.locator('[data-act=nav][data-page=stock]').first.click();page.locator('#global-search').fill('0001');page.locator('#global-search-form').evaluate('(form)=>{form.requestSubmit();form.requestSubmit();form.requestSubmit()}');expect(page.locator('#modal')).not_to_be_visible()
+  navigate('stock');page.locator('#global-search').fill('0001');page.locator('#global-search-form').evaluate('(form)=>{form.requestSubmit();form.requestSubmit();form.requestSubmit()}');expect(page.locator('#modal')).not_to_be_visible()
   assert not errors['pageerror'],errors
   (RESULTS/'browser-result.json').write_text(json.dumps({'passed':True,'scenarios':['button','Enter','full VIN','duplicate suffix','empty','IME composition','responsive','factory equipment','B2B work','outbound scope','summary','rapid submit'],'errors':errors},ensure_ascii=False,indent=2),encoding='utf-8');browser.close()
  print('PASS isolated Chrome search and Zontes workflows')

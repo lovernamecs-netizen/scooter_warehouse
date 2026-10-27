@@ -93,7 +93,7 @@ def test_encrypted_backup_restore(env,tmp_path):
  db,c,h,cmd,state,receive,v,vc,*_=env;id=receive();root=Path(__file__).resolve().parents[1];source=str(db.engine.url);target='sqlite:///'+str(tmp_path/'restored.db');backup=tmp_path/'backup.swh'
  if not db.sqlite:pytest.skip('Backup roundtrip run on isolated SQLite target')
  for action,url in [('backup',source),('restore',target)]:
-  r=subprocess.run([sys.executable,'-m','server.cli',action,'--file',str(backup)],cwd=root,env=dict(os.environ,DATABASE_URL=url,WAREHOUSE_BACKUP_PASSWORD='test-backup-password-123'),capture_output=True,text=True);assert r.returncode==0,r.stderr+r.stdout
+  r=subprocess.run([sys.executable,'-m','server.cli',action,'--file',str(backup)],cwd=root,env=dict(os.environ,DATABASE_URL=url,WAREHOUSE_BACKUP_PASSWORD='test-backup-password-123',PYTHONUTF8='1'),capture_output=True,text=True,encoding='utf-8');assert r.returncode==0,r.stderr+r.stdout
  assert backup.read_bytes()[:4]==b'SWH1';restored=Database(target)
  from server.models import Vehicle,Stay
  with restored.transaction() as s:assert s.get(Vehicle,id).vin==v(id)['vin'];assert s.scalar(select(Stay).where(Stay.vehicle_id==id)) is not None
