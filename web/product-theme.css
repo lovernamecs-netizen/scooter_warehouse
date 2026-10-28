@@ -133,3 +133,25 @@ dialog{border:1px solid #dfe6ea;box-shadow:0 24px 80px #172b3e36,0 3px 12px #172
 .ocr-local-open{display:inline-block;padding:11px 18px;border-radius:6px;background:#176b68;color:#fff;text-decoration:none;font-weight:600}.ocr-local-open:hover{background:#125650}.ocr-local-open:focus-visible{outline:3px solid #79c8bd;outline-offset:3px}
 .today-work-panel{margin-bottom:20px}.today-work-panel .panel-head{gap:12px;flex-wrap:wrap}.today-work-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}.today-work-card{display:flex;flex-direction:column;gap:9px;text-align:left;background:#fff;box-shadow:none;min-width:0}.today-work-card .split{width:100%;gap:8px;flex-wrap:wrap}.today-work-card .mono{font-size:12px;overflow-wrap:anywhere}.today-work-card strong{font-size:15px}.today-work-link{font-size:12px;color:#176b68}.work-map-banner{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px;border:1px solid #087d72;background:#edf9f6;border-radius:8px;margin-bottom:16px}.work-map-banner span{display:block;margin-top:6px}.slot.work-map-target,[data-act="detail"].work-map-target{outline:4px solid #007d79!important;outline-offset:3px;box-shadow:0 0 0 7px #b8e8dc!important}.work-map-banner strong{overflow-wrap:anywhere}@media(max-width:600px){.today-work-cards{grid-template-columns:1fr}.work-map-banner{align-items:stretch}}
 .work-map-banner{position:sticky;top:80px;z-index:4}@media(max-width:720px){.work-map-banner{top:68px}}
+
+/* Fold/tablet navigation: full labels, never the old 76px icon rail. */
+.sidebar .nav-section>summary,.sidebar nav button[data-page]{white-space:nowrap}
+.sidebar nav button[data-page]>span{flex-shrink:0}
+.ui-scale-controls{display:none}
+@media(pointer:coarse){
+ .ui-scale-controls{display:flex;gap:4px;margin-top:16px;justify-content:center}
+ .sidebar .ui-scale-controls button{width:auto;min-width:44px;min-height:44px;padding:8px;font-size:13px;justify-content:center}
+ dialog{max-width:calc(100vw / var(--ui-scale,1) - 24px);max-height:calc(100dvh / var(--ui-scale,1) - 24px)}
+ dialog.inspector{height:calc(100dvh / var(--ui-scale,1));max-height:calc(100dvh / var(--ui-scale,1))}
+}
+@media(min-width:720px) and (pointer:coarse){
+ .sidebar{width:190px;padding:18px 10px}
+ .main{margin-left:190px}
+ .sidebar .brand{justify-content:flex-start;gap:8px;font-size:14px;padding-bottom:18px}
+ .sidebar .brand-copy{display:block;white-space:nowrap}
+ .sidebar .brand small{display:block;font-size:7px}
+ .sidebar nav button[data-page]{font-size:13px;justify-content:flex-start;padding:10px 8px;gap:8px}
+ .sidebar .nav-section>summary{font-size:13px;padding:10px 8px}
+ .content{padding:18px 16px 32px}
+ .topbar{padding:0 14px}
+}

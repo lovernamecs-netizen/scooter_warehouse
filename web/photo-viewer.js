@@ -43,7 +43,7 @@ export function openOriginal({label,load,download,id='photo'}) {
   function draw(){if(!loaded)return;bounds();img.style.transform=`translate(${x}px,${y}px) scale(${scale})`;status.textContent=`${w} × ${h} · ${Math.round(scale*100)}% · 100% = 이미지 1픽셀/CSS 1픽셀`;stage.dataset.scale=String(scale);}
   function fitImage(){if(!loaded)return;fit=Math.min(stage.clientWidth/w,stage.clientHeight/h,1);scale=fit;fitted=true;draw();}
   function zoom(next,cx=stage.clientWidth/2,cy=stage.clientHeight/2){if(!loaded)return;const before=scale;scale=clamp(next,fit,Math.max(8,fit));x=cx-(cx-x)*scale/before;y=cy-(cy-y)*scale/before;fitted=false;draw();}
-  function local(e){const r=stage.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};}
+  function local(e){const r=stage.getBoundingClientRect();const z=r.width/stage.offsetWidth||1;return {x:(e.clientX-r.left)/z,y:(e.clientY-r.top)/z};}
   function snapshot(){const ps=[...points.values()];if(!ps.length){gesture=null;return;}const a=ps[0],b=ps[1];gesture={x,y,scale,cx:b?(a.x+b.x)/2:a.x,cy:b?(a.y+b.y)/2:a.y,d:b?Math.hypot(b.x-a.x,b.y-a.y):0};}
   const close=dialogBack(dialog,()=>{alive=false;attempt++;observer.disconnect();controller.abort();img.src='';if(url)URL.revokeObjectURL(url);dialog.close();dialog.remove();});
   listen(dialog,'click',async e=>{const action=e.target.closest('[data-v]')?.dataset.v;

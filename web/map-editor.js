@@ -1,3 +1,4 @@
+const uiScale=()=>Number(document.documentElement.style.zoom)||1;
 // Map coordinates are independent of viewport zoom and scroll.
 let busy=false, cancelDrag=null, menu=null;
 export const isMapBusy=()=>busy||gestureBusy||!!menu;
@@ -24,8 +25,8 @@ export function bindMapEditor({state,editing,zoom,onZoom,send,refresh,render,zon
   const h=document.createElement('strong');h.textContent=title;menu.append(h);
   for(const [label,action] of actions){const b=document.createElement('button');b.textContent=label;b.setAttribute('role','menuitem');b.onclick=()=>{closeMenu();action()};menu.append(b)}
   document.body.append(menu);
-  menu.style.left=Math.max(8,Math.min(e.clientX,innerWidth-menu.offsetWidth-8))+'px';
-  menu.style.top=Math.max(8,Math.min(e.clientY,innerHeight-menu.offsetHeight-8))+'px';
+  menu.style.left=Math.max(8,Math.min(e.clientX/uiScale(),innerWidth/uiScale()-menu.offsetWidth-8))+'px';
+  menu.style.top=Math.max(8,Math.min(e.clientY/uiScale(),innerHeight/uiScale()-menu.offsetHeight-8))+'px';
   menu.querySelector('button').focus({preventScroll:true});
  }
  function wire(el,handle,data,save,edit){
@@ -36,7 +37,7 @@ export function bindMapEditor({state,editing,zoom,onZoom,send,refresh,render,zon
   handle.onpointerdown=e=>{
    if(e.button!==0||e.target.closest('button,input,select')||busy)return;
    e.preventDefault();closeMenu();busy=true;
-   const zoom=Number(viewport.dataset.mapZoom)||1;
+   const zoom=(Number(viewport.dataset.mapZoom)||1)*uiScale();
    const start={x:data.x,y:data.y},origin=canvas.getBoundingClientRect();
    const grab={x:(e.clientX-origin.left)/zoom-start.x,y:(e.clientY-origin.top)/zoom-start.y};
    let pos={...start},moved=false;
@@ -102,9 +103,9 @@ export function bindMapNavigation(viewport,onZoom){
  viewport.addEventListener('wheel',e=>{
   e.preventDefault();closeMenu();if(busy||gestureBusy)return;
   const r=viewport.getBoundingClientRect(),units=e.deltaMode===1?16:e.deltaMode===2?viewport.clientHeight:1;
-  apply(current()*Math.exp(-Math.max(-240,Math.min(240,e.deltaY*units))*.002),e.clientX-r.left-viewport.clientLeft,e.clientY-r.top-viewport.clientTop);
+  apply(current()*Math.exp(-Math.max(-240,Math.min(240,e.deltaY*units))*.002),(e.clientX-r.left)/uiScale()-viewport.clientLeft,(e.clientY-r.top)/uiScale()-viewport.clientTop);
  },{passive:false});
- function geometry(){const a=[...points.values()],r=viewport.getBoundingClientRect();return a.length<2?null:{x:(a[0].x+a[1].x)/2-r.left-viewport.clientLeft,y:(a[0].y+a[1].y)/2-r.top-viewport.clientTop,d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}}
+ function geometry(){const a=[...points.values()],r=viewport.getBoundingClientRect();return a.length<2?null:{x:((a[0].x+a[1].x)/2-r.left)/uiScale()-viewport.clientLeft,y:((a[0].y+a[1].y)/2-r.top)/uiScale()-viewport.clientTop,d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}}
  viewport.addEventListener('pointerdown',e=>{
   if(e.pointerType!=='touch')return;
   points.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -117,7 +118,7 @@ export function bindMapNavigation(viewport,onZoom){
   points.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(points.size>=2){const g=geometry();if(previous&&previous.d>0)apply(current()*g.d/previous.d,g.x,g.y,previous.x,previous.y);previous=g;e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}
   else if(blocked){e.preventDefault();e.stopImmediatePropagation();}
-  else if(panning){if(!viewport.hasPointerCapture(e.pointerId))viewport.setPointerCapture(e.pointerId);const dx=e.clientX-old.x,dy=e.clientY-old.y;viewport.scrollLeft-=dx;viewport.scrollTop-=dy;if(Math.abs(dx)+Math.abs(dy)>2)suppressUntil=Date.now()+500;e.preventDefault();}
+  else if(panning){if(!viewport.hasPointerCapture(e.pointerId))viewport.setPointerCapture(e.pointerId);const dx=e.clientX-old.x,dy=e.clientY-old.y;viewport.scrollLeft-=dx/uiScale();viewport.scrollTop-=dy/uiScale();if(Math.abs(dx)+Math.abs(dy)>2)suppressUntil=Date.now()+500;e.preventDefault();}
  },true);
  function end(e){if(!points.has(e.pointerId))return;points.delete(e.pointerId);if(blocked){e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}previous=geometry();if(!points.size){panning=false;blocked=false;gestureBusy=false;}}
  viewport.addEventListener('pointerup',end,true);viewport.addEventListener('pointercancel',end,true);
