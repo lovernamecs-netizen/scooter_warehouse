@@ -1,4 +1,4 @@
-const CACHE='warehouse-fold-20261028';
+const CACHE='warehouse-fold-feedback-20261028';
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['/','/vehicle-inventory.js','/app.js','/customers.js','/ui-scale.js','/purchases.js','/search.js','/legacy-parts.js','/errors.js','/pending-request.js','/photo-storage.js','/photo-viewer.js','/parts.js','/order-parts-ui.js','/vehicle-hold.js','/used-stock.js','/camera.js','/pcx-inspection.png','/notifications.js','/keyboard-layout.js','/vin.js','/inventory-sort.js','/form-safety.js','/map-editor.js','/style.css','/product-theme.css','/fonts.css','/icon.svg','/manifest.json']))));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
 self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).pathname.startsWith('/api'))return;e.respondWith(fetch(e.request).then(r=>{if(r.ok&&new URL(e.request.url).origin===self.location.origin){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy))}return r}).catch(()=>caches.match(e.request)))});

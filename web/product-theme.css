@@ -137,10 +137,7 @@ dialog{border:1px solid #dfe6ea;box-shadow:0 24px 80px #172b3e36,0 3px 12px #172
 /* Fold/tablet navigation: full labels, never the old 76px icon rail. */
 .sidebar .nav-section>summary,.sidebar nav button[data-page]{white-space:nowrap}
 .sidebar nav button[data-page]>span{flex-shrink:0}
-.ui-scale-controls{display:none}
 @media(pointer:coarse){
- .ui-scale-controls{display:flex;gap:4px;margin-top:16px;justify-content:center}
- .sidebar .ui-scale-controls button{width:auto;min-width:44px;min-height:44px;padding:8px;font-size:13px;justify-content:center}
  dialog{max-width:calc(100vw / var(--ui-scale,1) - 24px);max-height:calc(100dvh / var(--ui-scale,1) - 24px)}
  dialog.inspector{height:calc(100dvh / var(--ui-scale,1));max-height:calc(100dvh / var(--ui-scale,1))}
 }
@@ -155,3 +152,9 @@ dialog{border:1px solid #dfe6ea;box-shadow:0 24px 80px #172b3e36,0 3px 12px #172
  .content{padding:18px 16px 32px}
  .topbar{padding:0 14px}
 }
+
+/* Transient top-layer feedback; physical size is independent of the UI zoom. */
+.ui-scale-feedback{position:fixed;inset:auto;margin:0;left:calc(50vw / var(--ui-scale,1));top:calc(50dvh / var(--ui-scale,1));width:calc(64px / var(--ui-scale,1));height:calc(42px / var(--ui-scale,1));padding:0;border:0;border-radius:calc(11px / var(--ui-scale,1));background:#20333be8;color:#fff;font-size:calc(18px / var(--ui-scale,1));font-weight:600;display:grid;place-items:center;pointer-events:none;z-index:10000;animation:ui-scale-fade 1.2s ease-out both}
+.ui-scale-feedback::backdrop{background:transparent;pointer-events:none}
+@keyframes ui-scale-fade{0%{opacity:.95;transform:translate(-50%,-50%) scale(.88)}18%{opacity:.95;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}
+@media(prefers-reduced-motion:reduce){.ui-scale-feedback{animation-name:ui-scale-fade-still}@keyframes ui-scale-fade-still{from{opacity:.95;transform:translate(-50%,-50%)}to{opacity:0;transform:translate(-50%,-50%)}}}

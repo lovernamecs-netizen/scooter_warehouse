@@ -9,7 +9,7 @@ try:
   page=browser.new_page(viewport={'width':800,'height':900},has_touch=True)
   errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
   page.goto(r[3]);page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload()
-  expect(page.locator('.ui-scale-controls')).to_be_visible()
+  expect(page.locator('.ui-scale-controls')).to_have_count(0)
   assert page.evaluate('document.documentElement.style.zoom')=='0.9'
   assert page.locator('.sidebar').bounding_box()['width']>=170
   assert page.locator('.nav-section>summary').first.evaluate('(e)=>getComputedStyle(e).whiteSpace')=='nowrap'
@@ -23,12 +23,20 @@ try:
    }''',{'factor':factor,'count':count})
    page.wait_for_timeout(460)
   gesture(.6);assert page.evaluate('document.documentElement.style.zoom')=='0.8'
+  expect(page.locator('.ui-scale-feedback')).to_have_text('80%')
+  box=page.locator('.ui-scale-feedback').bounding_box()
+  assert box['width']<70 and abs(box['x']+box['width']/2-400)<3
+  assert abs(box['y']+box['height']/2-450)<3
+  first_opacity=page.locator('.ui-scale-feedback').evaluate('(e)=>Number(getComputedStyle(e).opacity)')
+  page.wait_for_timeout(350)
+  assert page.locator('.ui-scale-feedback').evaluate('(e)=>Number(getComputedStyle(e).opacity)')<first_opacity
+  expect(page.locator('.ui-scale-feedback')).to_have_count(0,timeout=2000)
   gesture(1.5);assert page.evaluate('document.documentElement.style.zoom')=='0.9'
   gesture(.6,2);assert page.evaluate('document.documentElement.style.zoom')=='0.9'
   for _ in range(6):gesture(.6)
   assert page.evaluate('document.documentElement.style.zoom')=='0.7'
   page.reload();assert page.evaluate('document.documentElement.style.zoom')=='0.7'
-  page.locator('[data-ui-scale-reset]').click();assert page.evaluate('document.documentElement.style.zoom')=='0.9'
+  gesture(1.5);gesture(1.5);assert page.evaluate('document.documentElement.style.zoom')=='0.9'
   page.set_viewport_size({'width':400,'height':850});assert page.evaluate('document.documentElement.style.zoom')=='1'
   page.set_viewport_size({'width':900,'height':800});page.wait_for_timeout(200)
   assert page.evaluate('document.documentElement.style.zoom')=='0.9'
