@@ -1,3 +1,4 @@
+import {biometricFields,bindBiometricLogin,enrollBiometric} from './biometric-login.js?v=20261028-bio-v1';
 import './ui-scale.js?v=20261028-fold-feedback-v1';
 import {mountCustomerEditor,showCustomerHistory} from './customers.js?v=20261028-customer-v1';
 import {todayWorkVehicles} from './today-work.js?v=20261027-no-ocr-v1';
@@ -78,7 +79,15 @@ function head(title,subtitle,actions=''){return `<div class="page-head"><div><di
 function modal(title,html,footer=''){const m=$('#modal');document.body.classList.remove('inspector-open');m.classList.remove('inspector','used-product-modal','used-wizard');delete m.dataset.inspector;if(m.open)m.close();m.innerHTML=`<div class="modal-head"><h2>${title}</h2>${button('✕','close','','ghost')}</div><div class="modal-body"><div class="modal-error" role="alert"></div>${html}</div>${footer?`<div class="modal-foot">${footer}</div>`:''}`;if(!m.open)m.showModal();formSafety.opened()}
 function err(e){showError(e)}
 function formData(){return Object.fromEntries(new FormData($('#modal form')).entries())}
-function renderLogin(){ $('#app').innerHTML=`<div class="login panel"><div class="brand">Scooter<br>Warehouse<small>입고부터 출고까지</small></div><h2>창고에 연결하세요</h2><p class="muted">PC와 휴대폰에서 같은 재고를 확인합니다.</p><form id="login"><label>아이디</label><input name="username" autocomplete="username" required><label>비밀번호</label><input name="password" type="password" autocomplete="current-password" required><button class="primary">로그인</button><p id="login-error" class="error-page"></p></form><p class="hint">기본 설치 관리자 아이디는 admin입니다. 비밀번호는 최초 설치 시 직접 입력한 값입니다. 별도로 만든 계정은 해당 아이디를 사용하세요.</p></div>`;$('#login').onsubmit=async e=>{e.preventDefault();try{const r=await api('/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});token=r.token;sessionStorage.setItem('warehouseToken',token);await refresh();selectedDay=S.today;render()}catch(e){$('#login-error').textContent=e.message}}}
+async function acceptLogin(value){token=value;sessionStorage.setItem('warehouseToken',token);try{await refresh(true);selectedDay=S.today;render();}catch(e){token='';S=null;sessionStorage.removeItem('warehouseToken');window.WarehouseNative?.setUploadSession?.('','');throw e;}}
+function renderLogin(){ $('#app').innerHTML=`<div class="login panel"><div class="brand">Scooter<br>Warehouse</div><h2>로그인</h2><form id="login"><label>아이디</label><input name="username" autocomplete="username" required><label>비밀번호</label><input name="password" type="password" autocomplete="current-password" required>${biometricFields()}<button class="primary" type="submit">로그인</button><p id="login-error" class="error-page" role="alert"></p></form></div>`;
+ bindBiometricLogin(acceptLogin,renderLogin);
+ $('#login').onsubmit=async e=>{e.preventDefault();const form=e.target,submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;const credentials=Object.fromEntries(new FormData(form)),enabled=!!form.querySelector('#enable-biometric')?.checked;
+ try{const r=await api('/login',{method:'POST',body:JSON.stringify(credentials)});form.querySelector('[name=password]').value='';let notice='';try{await enrollBiometric(credentials.username,credentials.password,enabled);}catch(err){notice=err.message;}credentials.password='';await acceptLogin(r.token);if(notice)toast(notice);}
+ catch(err){credentials.password='';const error=$('#login-error');if(error)error.textContent=err.message;}
+ finally{submit.disabled=false;}
+ };}
+
 const mapViews=new Map();
 function rememberMapView(){const el=$('.map-viewport');if(el?.dataset.warehouseId)mapViews.set(el.dataset.warehouseId,{x:el.scrollLeft,y:el.scrollTop,zoom:Number(el.dataset.mapZoom)||1});}
 function restoreMapView(){const el=$('.map-viewport'),view=mapViews.get(el?.dataset.warehouseId);if(!el||!view)return;const scale=(Number(el.dataset.mapZoom)||1)/view.zoom;el.scrollLeft=view.x*scale;el.scrollTop=view.y*scale;}
