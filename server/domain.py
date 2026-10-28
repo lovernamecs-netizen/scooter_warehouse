@@ -101,9 +101,10 @@ def layout(s):
     ps={p.slot_id:p.stay_id for p in rows(s,Placement)}
     return {'warehouses':cfg['items'],'zones':[{'warehouse_id':wh.wid(cfg,z.id),'id':z.id,'name':z.name,'kind':z.kind,'rows':z.rows,'cols':z.cols,'x':z.x,'y':z.y,'model_ids':z.model_ids,'active':z.active,'version':z.version,'slots':[{'id':sl.id,'row':sl.row,'col':sl.col,'label':sl.label,'enabled':sl.enabled,'stay_id':ps.get(sl.id)} for sl in s.scalars(select(Slot).where(Slot.zone_id==z.id))]} for z in rows(s,Zone)],'objects':(s.get(Setting,'map_objects').value.get('objects',[]) if s.get(Setting,'map_objects') else [])}
 def state(s,u):
+    from .customer_privacy import permissions
     vehicles=[vehicle_dto(s,v,u) for v in rows(s,Vehicle)]
     if u.role=='ubis': vehicles=[v for v in vehicles if v['stay_id']];[v.update(assignment=None,equipment=[],notes='') for v in vehicles]
-    return {'revision':get(s,Guard,1).revision,'server_time':iso(now()),'today':today(),'user':{'id':u.id,'username':u.username,'role':u.role},'masters':[{'id':m.id,'kind':m.kind,'name':m.name,'detail':m.detail,'active':m.active,'version':m.version} for m in rows(s,Master)],'vehicles':vehicles,'layout':layout(s)}
+    return {'revision':get(s,Guard,1).revision,'server_time':iso(now()),'today':today(),'user':{'id':u.id,'username':u.username,'role':u.role,**permissions(s,u)},'masters':[{'id':m.id,'kind':m.kind,'name':m.name,'detail':m.detail,'active':m.active,'version':m.version} for m in rows(s,Master)],'vehicles':vehicles,'layout':layout(s)}
 def report(s,d):
     valid_date(d);end=datetime.combine(date.fromisoformat(d)+timedelta(days=1),time.min,KST).astimezone(timezone.utc)
     from .parts_orders import effective_outbounds
@@ -273,10 +274,21 @@ def execute(s,u,action,p):
         admin(u);d=valid_date(p['day']);need(d<=today(),'미래 날짜를 마감할 수 없습니다.');need(not s.get(Closing,d),'이미 마감된 날짜입니다.',409)
         snap=report(s,d);snap.pop('closing');s.add(Closing(day=d,actor=u.username,snapshot=snap));audit(s,u,'DAY_CLOSED',{'day':d});return {'day':d}
     if action=='user':
+        from .customer_privacy import permissions,pin_owner
+        need(permissions(s,u)['security_owner'],'최초 관리자만 계정을 관리할 수 있습니다.',403)
+        primary=pin_owner(s)
+        need(not p.get('id') or p['id']!=primary or (p.get('username')==u.username and p.get('role')=='admin' and p.get('active',True)),'최초 관리자 계정은 이름·권한·활성 상태를 변경할 수 없습니다.',403)
         admin(u);username=clean(p['username'],80);need(username,'아이디를 입력하세요.');role=p['role'];need(role in ['admin','worker','viewer','ubis'],'권한 오류')
         user=get(s,User,p['id']) if p.get('id') else User(username=username,password=hash_password(p['password']))
         need(user.id!=u.id or (p.get('active',True) and role=='admin'),'현재 관리자 본인의 권한을 해제할 수 없습니다.')
         user.username=username;user.role=role;user.active=bool(p.get('active',True))
+        if user.id and (role!='admin' or not user.active):
+            from .models import CustomerAccess
+            grant=s.get(CustomerAccess,user.id)
+            if grant and grant.allowed:
+                grant.allowed=False
+                from .customer_privacy import audit as privacy_audit
+                privacy_audit(s,u,'CUSTOMER_ACCESS_REVOKED',user.id)
         if p.get('password'):user.password=hash_password(p['password'])
         s.add(user);s.flush();audit(s,u,'USER_CHANGED',{'username':username,'role':role});return {'id':user.id}
     if action=='import_apply':
@@ -391,6 +403,8 @@ def execute(s,u,action,p):
         if z.kind in ['STORAGE','USED'] and not st.first_placed_at:st.first_placed_at=now()
         audit(s,u,'MOVED',{'from':before,'to':{'zone':z.name,'label':sl.label,'slot_id':sl.id,'warehouse_id':wh.wid(cfg,z.id),'warehouse':next(w['name'] for w in cfg['items'] if w['id']==wh.wid(cfg,z.id))}},v)
     elif action=='assign':
+        from .customer_privacy import allowed
+        allowed(s,u)
         need(not a,'이미 주문에 배정되어 있습니다.',409)
         older=fifo_candidates(s,v)
         fifo_reason=clean(p.get('fifo_override_reason',''),1000)
@@ -406,6 +420,8 @@ def execute(s,u,action,p):
         sequence.value={'last':current+1}
         o=Order(number=number,notes=clean(p.get('notes',''),4000));s.add(o);s.flush()
         a=Assignment(order_id=o.id,stay_id=st.id,scheduled=valid_date(p['scheduled']));s.add(a);s.flush()
+        from .customer_privacy import attach
+        attach(s,u,o.id,p.get('customer_id'))
         for kind,cls in [('options',OptionLine),('items',DeliveryLine)]:
             seen=set()
             for l in p.get(kind,[]):
@@ -537,7 +553,10 @@ def execute(s,u,action,p):
         place=s.get(Placement,st.id)
         if place:s.delete(place)
         stage_set(s,st.id)
-        s.flush();post_dispatch(s,u,out);audit(s,u,'DISPATCHED',{'outbound_id':out.id,'exception_reason':reason},v)
+        s.flush()
+        from .customer_privacy import dispatch as link_customer_dispatch
+        link_customer_dispatch(s,u,a.order_id,out.id)
+        post_dispatch(s,u,out);audit(s,u,'DISPATCHED',{'outbound_id':out.id,'exception_reason':reason},v)
     else:fail('지원하지 않는 작업입니다.')
     if v.kind=='USED' and action in ['equipment','equipment_remove']:
         from .used_stock import read,put

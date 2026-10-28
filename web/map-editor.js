@@ -6,7 +6,7 @@ document.addEventListener('pointerdown',e=>{if(menu&&!menu.contains(e.target))cl
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenu();cancelDrag?.()} });
 window.addEventListener('blur',()=>{closeMenu();cancelDrag?.()});
 window.addEventListener('resize',closeMenu);
-export function bindMapEditor({state,editing,zoom,onZoom,send,refresh,render,zoneEdit,slotAction,objectsEdit,restructure,enableEdit,toast}){
+export function bindMapEditor({state,editing,zoom,onZoom,send,refresh,render,zoneEdit,slotAction,vehicleMove,objectsEdit,restructure,enableEdit,toast}){
  closeMenu();
  const canvas=document.querySelector('.map-canvas');if(!canvas)return;
  const viewport=canvas.closest('.map-viewport');
@@ -66,6 +66,7 @@ export function bindMapEditor({state,editing,zoom,onZoom,send,refresh,render,zon
   el.oncontextmenu=e=>{
    const z=state.layout.zones.find(z=>z.id===el.dataset.zone),sl=z.slots.find(sl=>sl.id===el.dataset.slot);
    const actions=[];
+   if(sl.stay_id&&el.dataset.vehicle&&vehicleMove)actions.push(['차량 이동…',()=>vehicleMove(el.dataset.vehicle)]);
    if(sl.enabled&&!sl.stay_id){actions.push(['여기에 신규 차량 등록…',()=>slotAction('map-register',sl.id)],['기존 차량을 여기로 이동…',()=>slotAction('map-place',sl.id)])}
    if(admin)actions.push(['구역 설정 수정…',()=>zoneEdit(z.id)]);
    if(actions.length)popup(e,actions,z.name+' · '+sl.label);else e.stopPropagation();

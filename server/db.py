@@ -30,9 +30,11 @@ class Database:
                 if column not in columns:s.execute(text(f"ALTER TABLE vehicles ADD COLUMN {column} VARCHAR NOT NULL DEFAULT ''"))
             if not schema:s.add(Setting(key='schema_version',value={'version':2}))
             else:schema.value={'version':2}
+            from .customer_privacy import pin_owner
+            pin_owner(s)
             from .bundles import catalog
             if seed_catalog:catalog(s)
-            for table in ['outbound','history','closings','adjustments','layout_revisions','vehicle_inventory_snapshots','vehicle_inventory_events','vehicle_valuations','vehicle_inventory_facts','vehicle_inventory_requests','purchase_records','purchase_review_events']:
+            for table in ['outbound','history','closings','adjustments','layout_revisions','vehicle_inventory_snapshots','vehicle_inventory_events','vehicle_valuations','vehicle_inventory_facts','vehicle_inventory_requests','purchase_records','purchase_review_events','security_owner','customers','order_customers','outbound_customers','customer_audit','vehicle_customer_events']:
                 if self.sqlite:
                     for op in ['UPDATE','DELETE']:
                         s.execute(text(f"CREATE TRIGGER IF NOT EXISTS immutable_{table}_{op} BEFORE {op} ON {table} BEGIN SELECT RAISE(ABORT, 'immutable record'); END"))

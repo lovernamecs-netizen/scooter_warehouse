@@ -9,13 +9,17 @@ from server.models import User
 from server.security import hash_password
 
 @pytest.fixture
-def env(tmp_path):
+def env(tmp_path,monkeypatch):
+ from cryptography.fernet import Fernet
+ private=tmp_path/"customer.key";private.write_bytes(Fernet.generate_key());monkeypatch.setenv("WAREHOUSE_CUSTOMER_KEY_FILE",str(private))
  db=Database(os.getenv('TEST_DATABASE_URL') or 'sqlite:///'+str(tmp_path/'test.db'));db.init()
  with db.transaction() as s:
   if not s.scalar(select(User)):
    for role in ['admin','worker']:s.add(User(username=role,password=hash_password('test-password-123'),role=role))
  c=TestClient(create_app(db));token=c.post('/api/login',json={'username':'admin','password':'test-password-123'}).json()['token'];h={'Authorization':'Bearer '+token}
+ customer=c.post('/api/customers',headers=h,json={'name':'합성 테스트 업체','kind':'COMPANY','request_id':str(uuid.uuid4())}).json()['id']
  def cmd(action,payload,status=200,cid=None):
+  if action=='assign':payload={'customer_id':customer,**payload}
   r=c.post('/api/command',headers=h,json={'command_id':cid or str(uuid.uuid4()),'action':action,'payload':payload});assert r.status_code==status,r.text;return r.json()
  def state():return c.get('/api/state',headers=h).json()
  suffix=uuid.uuid4().hex[:8]

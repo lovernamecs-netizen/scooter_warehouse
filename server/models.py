@@ -22,6 +22,65 @@ class Session(Base):
     id: Mapped[str]=mapped_column(String,primary_key=True)
     user_id: Mapped[str]=mapped_column(ForeignKey('users.id'))
     expires: Mapped[datetime]=mapped_column(DateTime(timezone=True))
+class SecurityOwner(Base):
+    __tablename__='security_owner'
+    id: Mapped[int]=mapped_column(primary_key=True)
+    user_id: Mapped[str]=mapped_column(ForeignKey('users.id'),unique=True)
+class CustomerAccess(Base):
+    __tablename__='customer_access'
+    user_id: Mapped[str]=mapped_column(ForeignKey('users.id'),primary_key=True)
+    allowed: Mapped[bool]=mapped_column(default=False)
+    granted_by: Mapped[str]=mapped_column(ForeignKey('users.id'))
+class Customer(Base):
+    __tablename__='customers'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    kind: Mapped[str]
+    encrypted_name: Mapped[str]
+    created_by: Mapped[str]=mapped_column(ForeignKey('users.id'))
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+    request_id: Mapped[str]=mapped_column(String,unique=True)
+    request_digest: Mapped[str]
+class CustomerSearch(Base):
+    __tablename__='customer_search'
+    token: Mapped[str]=mapped_column(String,primary_key=True)
+    customer_id: Mapped[str]=mapped_column(ForeignKey('customers.id'),primary_key=True,index=True)
+class OrderCustomer(Base):
+    __tablename__='order_customers'
+    order_id: Mapped[str]=mapped_column(ForeignKey('orders.id'),primary_key=True)
+    customer_id: Mapped[str]=mapped_column(ForeignKey('customers.id'),index=True)
+    encrypted_name: Mapped[str]
+    kind: Mapped[str]
+class OutboundCustomer(Base):
+    __tablename__='outbound_customers'
+    __table_args__=(Index('customer_dispatch_page','customer_id','at','outbound_id'),)
+    outbound_id: Mapped[str]=mapped_column(ForeignKey('outbound.id'),primary_key=True)
+    order_id: Mapped[str]=mapped_column(ForeignKey('orders.id'),index=True)
+    customer_id: Mapped[str]=mapped_column(ForeignKey('customers.id'),index=True)
+    encrypted_name: Mapped[str]
+    kind: Mapped[str]
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+class CustomerAudit(Base):
+    __tablename__='customer_audit'
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now,index=True)
+    actor_id: Mapped[str]=mapped_column(ForeignKey('users.id'))
+    event: Mapped[str]
+    target_id: Mapped[str]=mapped_column(default='')
+class VehicleCustomerEvent(Base):
+    """Append-only relationship events; original dispatch is never rewritten by succession."""
+    __tablename__='vehicle_customer_events'
+    __table_args__=(CheckConstraint("kind IN ('DELIVERY','TRANSFER')"),)
+    id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)
+    vehicle_id: Mapped[str]=mapped_column(ForeignKey('vehicles.id'),index=True)
+    customer_id: Mapped[str]=mapped_column(ForeignKey('customers.id'),index=True)
+    previous_customer_id: Mapped[str|None]=mapped_column(ForeignKey('customers.id'),nullable=True)
+    previous_event_id: Mapped[str|None]=mapped_column(ForeignKey('vehicle_customer_events.id'),nullable=True,unique=True)
+    outbound_id: Mapped[str]=mapped_column(ForeignKey('outbound.id'),index=True)
+    kind: Mapped[str]=mapped_column(default='DELIVERY')
+    effective_day: Mapped[str]
+    encrypted_reason: Mapped[str]=mapped_column(default='')
+    actor_id: Mapped[str]=mapped_column(ForeignKey('users.id'))
+    at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
 class Master(Base):
     __tablename__='masters'
     id: Mapped[str]=mapped_column(String,primary_key=True,default=uid)

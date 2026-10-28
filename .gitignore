@@ -43,6 +43,7 @@ exports/
 !.env.example
 *.pem
 *.key
+*.keybackup
 *.p12
 *.pfx
 *.cer

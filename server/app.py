@@ -325,10 +325,34 @@ def create_app(database=None):
         with db.transaction() as s:
             u=user(s,request);need(u.role!='ubis','권한이 없습니다.',403)
             return [{'id':o.id,'vehicle_id':o.vehicle_id,'at':iso(o.at),'day':o.day,'snapshot':o.snapshot,'adjustments':[{'kind':a.kind,'reason':a.reason,'at':iso(a.at),'detail':a.detail} for a in s.scalars(select(Adjustment).where(Adjustment.outbound_id==o.id))]} for o in s.scalars(select(Outbound).order_by(Outbound.at.desc()))]
+    @app.post('/api/customers/search')
+    def customer_search(request:Request,p:dict):
+        from .customer_privacy import search
+        with db.transaction() as s:return search(s,user(s,request),p)
+    @app.post('/api/customers')
+    def customer_create(request:Request,p:dict):
+        from .customer_privacy import create
+        with db.transaction() as s:return create(s,user(s,request),p)
+    @app.get('/api/customers/order/{order_id}')
+    def customer_order(order_id:str,request:Request):
+        from .customer_privacy import order_name
+        with db.transaction() as s:return order_name(s,user(s,request),order_id)
+    @app.get('/api/customers/{customer_id}/history')
+    def customer_history(customer_id:str,request:Request,after:str=''):
+        from .customer_privacy import history
+        with db.transaction() as s:return history(s,user(s,request),customer_id,after)
+    @app.post('/api/customers/access')
+    def customer_access(request:Request,p:dict):
+        from .customer_privacy import grant
+        with db.transaction() as s:
+            u=user(s,request);target=s.get(User,str(p.get('user_id','')))
+            need(target is not None,'계정이 없습니다.',404);need(type(p.get('allowed')) is bool,'권한 값을 확인하세요.',422)
+            grant(s,u,target,p['allowed']);return {'ok':True}
     @app.get('/api/users')
     def users(request:Request):
         with db.transaction() as s:
-            admin(user(s,request));return [{'id':u.id,'username':u.username,'role':u.role,'active':u.active} for u in s.scalars(select(User))]
+            from .customer_privacy import permissions
+            admin(user(s,request));return [{'id':u.id,'username':u.username,'role':u.role,'active':u.active,**permissions(s,u)} for u in s.scalars(select(User))]
     @app.post('/api/import/preview')
     async def preview(request:Request,file:UploadFile=File(...),mapping:str=Form('{}')):
         data=await file.read(3_000_001)
