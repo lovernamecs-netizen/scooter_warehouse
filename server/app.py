@@ -347,6 +347,10 @@ def create_app(database=None):
     def customer_create(request:Request,p:dict):
         from .customer_privacy import create
         with db.transaction() as s:return create(s,user(s,request),p)
+    @app.post('/api/customers/outbounds')
+    def customer_outbounds(request:Request,p:dict):
+        from .customer_privacy import outbound_names
+        with db.transaction() as s:return outbound_names(s,user(s,request),p.get('outbound_ids'))
     @app.post('/api/customers/orders')
     def customer_orders(request:Request,p:dict):
         from .customer_privacy import order_names

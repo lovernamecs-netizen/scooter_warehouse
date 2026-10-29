@@ -51,6 +51,13 @@ def test_required_identity_and_immutable_dispatch_link(env):
     assert c.get('/api/customers/order/'+order,headers=wh).status_code==403
     vc('dispatch',vehicle,{'exception_reason':'합성 예외 출고','stock_exception_reason':'합성 검증','handed':{}})
     items=c.get('/api/customers/'+ident+'/history',headers=h).json()['items'];assert len(items)==1 and items[0]['vehicle_id']==vehicle
+    ids=[items[0]['id'],'legacy-unlinked']
+    response=c.post('/api/customers/outbounds',headers=h,json={'outbound_ids':ids})
+    assert response.status_code==200 and response.json()[ids[0]]['name']=='자주 주문하는 합성업체'
+    assert response.json()['legacy-unlinked'] is None
+    assert response.headers['cache-control']=='no-store'
+    assert c.post('/api/customers/outbounds',headers=wh,json={'outbound_ids':ids}).status_code==403
+    assert c.post('/api/customers/outbounds',headers=h,json={'outbound_ids':['a']*201}).status_code==422
     common=c.get('/api/outbound',headers=wh).json();assert '자주 주문하는 합성업체' not in json.dumps(common,ensure_ascii=False)
     with db.read() as s:
         assert len(list(s.scalars(select(OutboundCustomer))))==1

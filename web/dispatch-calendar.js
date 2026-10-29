@@ -21,4 +21,13 @@ export async function renderDispatchCalendar(target,H,day){
   if(el.dataset.dispatch==='all')H.select('');
  });
  target.querySelector('[data-dispatch-month]').onchange=ev=>{if(/^\d{4}-\d{2}$/.test(ev.target.value))H.select(ev.target.value+'-01');};
+ if(H.customerAccess){
+  const cells=[...target.querySelectorAll('[data-outbound-customer]')];
+  for(let i=0;i<cells.length;i+=200){const batch=cells.slice(i,i+200);try{
+   const names=await H.api('/customers/outbounds',{method:'POST',body:JSON.stringify({outbound_ids:batch.map(el=>el.dataset.outboundCustomer)})});
+   if(ticket!==sequence||!target.isConnected||!H.isCurrent())return;
+   for(const el of batch)el.textContent=names[el.dataset.outboundCustomer]?.name||'미등록';
+  }catch{if(ticket!==sequence||!target.isConnected||!H.isCurrent())return;for(const el of batch)el.textContent='조회 실패';}}
+ }
+
 }

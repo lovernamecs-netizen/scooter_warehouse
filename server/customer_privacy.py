@@ -127,3 +127,13 @@ def order_names(s,u,ids):
         result[row.order_id]={'name':decrypt(row.encrypted_name),'kind':row.kind}
     if ids:audit(s,u,'CUSTOMER_ORDERS_VIEWED',','.join(ids))
     return result
+
+
+def outbound_names(s,u,ids):
+    allowed(s,u)
+    require(isinstance(ids,list) and len(ids)<=200 and all(isinstance(x,str) and 0<len(x)<=80 for x in ids),'출고 목록을 확인하세요.',422)
+    ids=list(dict.fromkeys(ids));result={x:None for x in ids}
+    for row in s.scalars(select(OutboundCustomer).where(OutboundCustomer.outbound_id.in_(ids))):
+        result[row.outbound_id]={'name':decrypt(row.encrypted_name),'kind':row.kind}
+    if ids:audit(s,u,'CUSTOMER_OUTBOUNDS_VIEWED',','.join(ids))
+    return result
