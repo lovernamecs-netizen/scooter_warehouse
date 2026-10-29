@@ -21,3 +21,10 @@ export async function loadOrderCustomers(container,api){
   }catch{for(const node of nodes)if(node.isConnected)node.textContent='고객정보 조회 불가';}
  }
 }
+
+export function orderChannelBadge(v){
+ const channel=v.assignment?.parts_order?.channel;
+ if(!v.assignment)return '';
+ if(channel!=='B2B'&&channel!=='B2C')return '<span class="order-channel-badge unknown" aria-label="주문 구분 미등록">구분 미등록</span>';
+ return `<span class="order-channel-badge ${channel.toLowerCase()}" aria-label="${channel} 주문">${channel}</span>`;
+}

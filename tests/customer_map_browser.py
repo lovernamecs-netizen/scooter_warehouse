@@ -43,6 +43,19 @@ try:
   order=page.evaluate("""async()=>{const {sortWorkOrders}=await import('/work-orders.js');return sortWorkOrders([{id:'far',assignment:{scheduled:'2026-10-01'}},{id:'tomorrow',assignment:{scheduled:'2026-10-30'}},{id:'today',assignment:{scheduled:'2026-10-29'}},{id:'yesterday',assignment:{scheduled:'2026-10-28'}},{id:'unknown',assignment:{}}],'2026-10-29').map(v=>v.id)}""")
   assert order==['today','yesterday','tomorrow','far','unknown']
   assert page.evaluate("!JSON.stringify(localStorage).includes('합성 단골업체') && !JSON.stringify(sessionStorage).includes('합성 단골업체')")
+  for channel,label in [('B2B','B2B'),('B2C','B2C'),(None,'구분 미등록')]:
+   def channel_response(route):
+    response=route.fetch();body=response.json()
+    for row in body['vehicles']:
+     if row['id']==vehicle:row['assignment']['parts_order']={'channel':channel} if channel else None
+    route.fulfill(response=response,json=body)
+   page.route('**/api/state',channel_response);page.reload()
+   expect(page.locator('.dispatch-priority [data-id="'+vehicle+'"] .order-channel-badge')).to_have_text(label)
+   page.locator('.nav-section>summary',has_text='주문·출고').click();page.locator('.sidebar [data-page=work]').click()
+   expect(page.locator('.vehicle-cards [data-id="'+vehicle+'"] .order-channel-badge')).to_have_text(label)
+   expect(page.locator('tr[data-id="'+vehicle+'"] .order-channel-badge')).to_have_text(label)
+   expect(page.locator('.today-work-card[data-id="'+vehicle+'"] .order-channel-badge')).to_have_text(label)
+   page.unroute('**/api/state',channel_response)
   assert not errors,errors
   browser.close()
  print('PASS actual browser: edit-mode 2s hold/move menu, exit edit mode, customer autocomplete/select, no name in browser persistent storage. Physical Android unverified.')
