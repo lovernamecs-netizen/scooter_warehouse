@@ -321,10 +321,24 @@ def create_app(database=None):
             u=user(s,request);need(u.role!='ubis','권한이 없습니다.',403)
             return [{'id':h.id,'at':iso(h.at),'event':h.event,'actor':h.actor,'data':h.data} for h in s.scalars(select(History).where(History.vehicle_id==vehicle_id).order_by(History.at))]
     @app.get('/api/outbound')
-    def outbound(request:Request):
-        with db.transaction() as s:
+    def outbound(request:Request,month:str|None=None):
+        with db.read() as s:
             u=user(s,request);need(u.role!='ubis','권한이 없습니다.',403)
-            return [{'id':o.id,'vehicle_id':o.vehicle_id,'at':iso(o.at),'day':o.day,'snapshot':o.snapshot,'adjustments':[{'kind':a.kind,'reason':a.reason,'at':iso(a.at),'detail':a.detail} for a in s.scalars(select(Adjustment).where(Adjustment.outbound_id==o.id))]} for o in s.scalars(select(Outbound).order_by(Outbound.at.desc()))]
+            stmt=select(Outbound)
+            if month is not None:
+                from datetime import date
+                import re
+                need(bool(re.fullmatch(r'\d{4}-\d{2}',month)),'조회 월을 확인하세요.',422)
+                try:
+                    first=date.fromisoformat(month+'-01');last=date(first.year+1,1,1) if first.month==12 else date(first.year,first.month+1,1)
+                except ValueError:raise HTTPException(422,'조회 월을 확인하세요.')
+                stmt=stmt.where(Outbound.day>=first.isoformat(),Outbound.day<last.isoformat())
+            rows=list(s.scalars(stmt.order_by(Outbound.at.desc(),Outbound.id)))
+            adjustments={o.id:[] for o in rows}
+            for offset in range(0,len(rows),500):
+                for a in s.scalars(select(Adjustment).where(Adjustment.outbound_id.in_([o.id for o in rows[offset:offset+500]]))):
+                    adjustments[a.outbound_id].append({'kind':a.kind,'reason':a.reason,'at':iso(a.at),'detail':a.detail})
+            return [{'id':o.id,'vehicle_id':o.vehicle_id,'at':iso(o.at),'day':o.day,'snapshot':o.snapshot,'adjustments':adjustments[o.id]} for o in rows]
     @app.post('/api/customers/search')
     def customer_search(request:Request,p:dict):
         from .customer_privacy import search

@@ -60,6 +60,9 @@ def create(s,u,p):
     if old:
         require(old.created_by==u.id and old.request_digest==digest,'다른 요청에 사용된 ID입니다.',409)
         return {'id':old.id}
+    if p.get('prevent_duplicate'):
+        candidates=s.scalars(select(Customer).join(CustomerSearch).where(CustomerSearch.token==token(normalize(name)),Customer.kind==kind))
+        require(not any(normalize(decrypt(c.encrypted_name))==normalize(name) for c in candidates),'같은 이름의 고객이 있습니다. 기존 고객 목록에서 선택하세요.',409)
     row=Customer(kind=kind,encrypted_name=encrypt(name),created_by=u.id,request_id=request,request_digest=digest)
     s.add(row);s.flush()
     norm=normalize(name)

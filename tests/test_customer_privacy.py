@@ -90,3 +90,21 @@ def test_duplicate_names_are_not_merged_and_pagination(env):
     for i in range(22):new_customer(c,h,'페이지합성 '+str(i))
     result=c.post('/api/customers/search',headers=h,json={'query':'페이지합성'}).json();assert len(result['items'])==20 and result['next']
     more=c.post('/api/customers/search',headers=h,json={'query':'페이지합성','after':result['next']}).json();assert len(more['items'])==2
+
+def test_editor_rejects_duplicate_without_altering_existing_identity(env):
+    db,c,h,*_=env
+    ident=new_customer(c,h,'Duplicate Company')
+    response=c.post('/api/customers',headers=h,json={'name':' duplicate company ','kind':'COMPANY','request_id':str(uuid.uuid4()),'prevent_duplicate':True})
+    assert response.status_code==409
+    rows=c.post('/api/customers/search',headers=h,json={'query':'duplicate company'}).json()['items']
+    assert [row['id'] for row in rows]==[ident]
+
+def test_delegated_admin_can_assign(env):
+    db,c,h,cmd,state,receive,v,vc,z,*_=env
+    ident=new_customer(c,h);vehicle=receive();vc('move',vehicle,{'slot_id':z['slots'][0]['id']})
+    other,headers=another(db)
+    payload={'vehicle_id':vehicle,'version':v(vehicle)['version'],'scheduled':state()['today'],'customer_id':ident}
+    def assign():return c.post('/api/command',headers=headers,json={'command_id':str(uuid.uuid4()),'action':'assign','payload':payload})
+    assert assign().status_code==403
+    assert c.post('/api/customers/access',headers=h,json={'user_id':other,'allowed':True}).status_code==200
+    response=assign();assert response.status_code==200,response.text
