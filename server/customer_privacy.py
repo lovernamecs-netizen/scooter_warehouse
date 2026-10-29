@@ -114,3 +114,13 @@ def grant(s,u,target,enabled):
     pin_owner(s);row=s.get(CustomerAccess,target.id)
     if not row:row=CustomerAccess(user_id=target.id,granted_by=u.id);s.add(row)
     row.allowed=enabled;row.granted_by=u.id;audit(s,u,'CUSTOMER_ACCESS_GRANTED' if enabled else 'CUSTOMER_ACCESS_REVOKED',target.id)
+
+
+def order_names(s,u,ids):
+    allowed(s,u)
+    require(isinstance(ids,list) and len(ids)<=200 and all(isinstance(x,str) and 0<len(x)<=80 for x in ids),'주문 목록을 확인하세요.',422)
+    ids=list(dict.fromkeys(ids));result={x:None for x in ids}
+    for row in s.scalars(select(OrderCustomer).where(OrderCustomer.order_id.in_(ids))):
+        result[row.order_id]={'name':decrypt(row.encrypted_name),'kind':row.kind}
+    if ids:audit(s,u,'CUSTOMER_ORDERS_VIEWED',','.join(ids))
+    return result

@@ -41,7 +41,13 @@ def test_required_identity_and_immutable_dispatch_link(env):
     vc('assign',vehicle,{'scheduled':state()['today'],'customer_id':ident})
     order=v(vehicle)['assignment']['order_id']
     assert c.get('/api/customers/order/'+order,headers=h).json()['name']=='자주 주문하는 합성업체'
+    bulk=c.post('/api/customers/orders',headers=h,json={'order_ids':[order,'legacy-unknown']})
+    assert bulk.status_code==200 and bulk.json()[order]['name']=='자주 주문하는 합성업체'
+    assert bulk.json()['legacy-unknown'] is None
+    assert bulk.headers['cache-control']=='no-store'
+    assert c.post('/api/customers/orders',headers=h,json={'order_ids':['a']*201}).status_code==422
     worker,wh=another(db,'worker')
+    assert c.post('/api/customers/orders',headers=wh,json={'order_ids':[order]}).status_code==403
     assert c.get('/api/customers/order/'+order,headers=wh).status_code==403
     vc('dispatch',vehicle,{'exception_reason':'합성 예외 출고','stock_exception_reason':'합성 검증','handed':{}})
     items=c.get('/api/customers/'+ident+'/history',headers=h).json()['items'];assert len(items)==1 and items[0]['vehicle_id']==vehicle

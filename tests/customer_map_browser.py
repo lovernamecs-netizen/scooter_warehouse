@@ -32,6 +32,17 @@ try:
   assert selected['id']==customer
   assert page.evaluate("document.querySelector('#customer-editor').saveCustomer()") == customer
   assert page.evaluate("!JSON.stringify(localStorage).includes('합성 단골업체') && !JSON.stringify(sessionStorage).includes('합성 단골업체')")
+  page.locator('#modal').evaluate('(e)=>e.close()')
+  state=c.get('/api/state',headers=headers).json();v=next(v for v in state['vehicles'] if v['id']==vehicle)
+  cmd('assign',{'vehicle_id':vehicle,'version':v['version'],'scheduled':state['today'],'customer_id':customer})
+  page.reload();page.locator('.nav-section>summary',has_text='주문·출고').click();page.locator('.sidebar [data-page=work]').click()
+  expect(page.locator('.work-customer-cell .order-customer-name')).to_have_text('합성 단골업체')
+  expect(page.locator('.work-customer-card .order-customer-name').last).to_have_text('합성 단골업체')
+  row=page.locator('.vehicle-cards [data-id="'+vehicle+'"]');row.click()
+  expect(page.locator('.modal-body>section.customer-order-banner:first-child .order-customer-name')).to_have_text('합성 단골업체')
+  order=page.evaluate("""async()=>{const {sortWorkOrders}=await import('/work-orders.js');return sortWorkOrders([{id:'far',assignment:{scheduled:'2026-10-01'}},{id:'tomorrow',assignment:{scheduled:'2026-10-30'}},{id:'today',assignment:{scheduled:'2026-10-29'}},{id:'yesterday',assignment:{scheduled:'2026-10-28'}},{id:'unknown',assignment:{}}],'2026-10-29').map(v=>v.id)}""")
+  assert order==['today','yesterday','tomorrow','far','unknown']
+  assert page.evaluate("!JSON.stringify(localStorage).includes('합성 단골업체') && !JSON.stringify(sessionStorage).includes('합성 단골업체')")
   assert not errors,errors
   browser.close()
  print('PASS actual browser: edit-mode 2s hold/move menu, exit edit mode, customer autocomplete/select, no name in browser persistent storage. Physical Android unverified.')

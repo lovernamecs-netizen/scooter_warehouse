@@ -333,6 +333,10 @@ def create_app(database=None):
     def customer_create(request:Request,p:dict):
         from .customer_privacy import create
         with db.transaction() as s:return create(s,user(s,request),p)
+    @app.post('/api/customers/orders')
+    def customer_orders(request:Request,p:dict):
+        from .customer_privacy import order_names
+        with db.transaction() as s:return order_names(s,user(s,request),p.get('order_ids'))
     @app.get('/api/customers/order/{order_id}')
     def customer_order(order_id:str,request:Request):
         from .customer_privacy import order_name
