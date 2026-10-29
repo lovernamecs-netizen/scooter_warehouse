@@ -40,6 +40,20 @@ try:
    root.querySelector('[data-choice]').click();const id=await root.saveCustomer();const cleared=!root.querySelector('[data-results]').textContent;root.remove();return {groups,rejected,selected:ids.includes(id),cleared};
   }""",token)
   assert result=={'groups':1,'rejected':True,'selected':True,'cleared':True},result
+  typography=page.evaluate("""async()=>{
+   const {monthCalendar}=await import('/month-calendar.js');const {koreanHoliday}=await import('/korean-holidays.js');
+   const root=document.createElement('div');document.body.append(root);
+   root.innerHTML=['출고 일정·이력 달력','구매입고 달력','부품 재고마감 달력','차량 재고 달력'].map(label=>monthCalendar({month:'2026-10',label,cell:(d,n)=>'<button><strong>'+n+'</strong><small>출고 14대</small><b>3대</b></button>'})).join('');
+   const sizes=[...root.querySelectorAll('.month-calendar')].map(c=>['.month-calendar-week span','.month-calendar-day strong','.month-calendar-day small:not(.calendar-holiday)','.month-calendar-day b'].map(q=>getComputedStyle(c.querySelector(q)).fontSize).join(','));
+   const red=getComputedStyle(root.querySelector('[data-calendar-day="2026-10-04"] strong')).color;
+   const blue=getComputedStyle(root.querySelector('[data-calendar-day="2026-10-10"] strong')).color;
+   const holiday=root.querySelector('[data-calendar-day="2026-10-03"]').classList.contains('is-holiday');
+   root.remove();return {sizes,red,blue,holiday,substitute:koreanHoliday('2026-10-05').name,oldConstitution:koreanHoliday('2025-07-17').holiday,newConstitution:koreanHoliday('2026-07-17').holiday};
+  }""")
+  assert len(set(typography['sizes']))==1,typography
+  assert typography['red']=='rgb(188, 48, 59)' and typography['blue']=='rgb(37, 99, 166)',typography
+  assert typography['holiday'] and typography['substitute']=='대체공휴일'
+  assert not typography['oldConstitution'] and typography['newConstitution']
   assert not errors,errors
   browser.close()
  print('PASS common purchase/parts/dispatch calendar UI, selection/month navigation, VOID excluded, RETURN retained, 390px layout, leap month, parts requests contain no purchase/value queries. Native device unverified.')

@@ -165,15 +165,19 @@ dialog{border:1px solid #dfe6ea;box-shadow:0 24px 80px #172b3e36,0 3px 12px #172
 
 .month-calendar-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.month-calendar-toolbar>button{min-width:42px;min-height:40px}.month-calendar-toolbar>strong{font-size:17px;min-width:90px;text-align:center}.month-calendar-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}.month-calendar-controls input{width:auto;max-width:165px}.month-calendar-week,.month-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.month-calendar-week{margin-bottom:6px}.month-calendar-week span{text-align:center;font-size:12px;padding:7px}.month-calendar-week span:first-child{color:#ad4848}.month-calendar-week span:last-child{color:#3766a0}.month-calendar-day{min-width:0}.month-calendar-day>button{width:100%;height:100%;min-height:96px;padding:8px 3px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:5px;background:#fff;border:1px solid #d5e0e4;border-radius:9px;box-shadow:none;white-space:normal}.month-calendar-day>button strong{font-size:13px}.month-calendar-day>button small,.month-calendar-day>button em{font-size:11px;line-height:1.35;overflow-wrap:anywhere;font-style:normal}.month-calendar-day.is-selected>button{border:2px solid #14796f;background:#edf8f4}.month-calendar-day.is-today>button strong{color:#08776c;text-decoration:underline;text-underline-offset:3px}.month-calendar-day>button:focus-visible{outline:2px solid #08776c;outline-offset:2px}.month-calendar-day>button:disabled{opacity:.5}.calendar-actual{color:#176c60;font-weight:700}.dispatch-month-totals{display:flex;gap:22px;flex-wrap:wrap;margin:16px 0}.dispatch-month-totals strong{font-size:24px;display:block}@media(max-width:600px){.month-calendar-controls{margin-left:0}.month-calendar-grid,.month-calendar-week{gap:3px}.month-calendar-day>button{min-height:90px;padding:7px 2px}.month-calendar-day>button small{font-size:10px}}
 
-/* Dispatch calendar: readable dates and counts without changing other domains. */
-.month-calendar[aria-label="출고 일정·이력 달력"] .month-calendar-toolbar>strong{font-size:22px}
-.month-calendar[aria-label="출고 일정·이력 달력"] .month-calendar-week span{font-size:14px}
-.month-calendar-day>button[data-dispatch="day"]{min-height:112px;gap:7px;padding:10px 3px}
-.month-calendar-day>button[data-dispatch="day"] strong{font-size:22px;line-height:1.2}
-.month-calendar-day>button[data-dispatch="day"] small{font-size:16px;line-height:1.35;word-break:keep-all;overflow-wrap:normal}
-.month-calendar-day>button[data-dispatch="day"] .calendar-actual{font-weight:750}
+/* All business calendars share typography and day geometry. */
+.month-calendar{--calendar-date:22px;--calendar-body:16px;--calendar-week:18px}
+.month-calendar .month-calendar-toolbar>strong{font-size:22px}
+.month-calendar .month-calendar-week span{font-size:var(--calendar-week);font-weight:700}
+.month-calendar .month-calendar-day>button{min-height:124px;gap:7px;padding:10px 3px}
+.month-calendar .month-calendar-day>button strong{font-size:var(--calendar-date);line-height:1.2}
+.month-calendar .month-calendar-day>button small,.month-calendar .month-calendar-day>button em,.month-calendar .month-calendar-day>button b{font-size:var(--calendar-body);line-height:1.35;word-break:keep-all;overflow-wrap:anywhere;font-style:normal}
+.month-calendar .month-calendar-day.is-saturday>button>strong{color:#2563a6}
+.month-calendar .month-calendar-day.is-sunday>button>strong,.month-calendar .month-calendar-day.is-holiday>button>strong{color:#bc303b}
+.month-calendar .calendar-holiday{color:#bc303b;font-weight:650}
+.month-calendar .month-calendar-week span:first-child{color:#bc303b}
+.month-calendar .month-calendar-week span:last-child{color:#2563a6}
 @media(max-width:600px){
- .month-calendar-day>button[data-dispatch="day"]{min-height:108px;padding:8px 2px;gap:6px}
- .month-calendar-day>button[data-dispatch="day"] strong{font-size:18px}
- .month-calendar-day>button[data-dispatch="day"] small{font-size:12px}
+ .month-calendar{--calendar-date:18px;--calendar-body:12px;--calendar-week:16px}
+ .month-calendar .month-calendar-day>button{min-height:116px;padding:8px 2px;gap:6px}
 }
