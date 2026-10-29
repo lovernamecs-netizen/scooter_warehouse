@@ -87,8 +87,8 @@ window.addEventListener('blur',()=>resetNavigation?.());
 export function bindMapNavigation(viewport,onZoom){
  resetNavigation?.();
  const canvas=viewport.querySelector('.map-canvas'),spacer=canvas.parentElement;
- const points=new Map();let previous=null,panning=false,blocked=false,suppressUntil=0;
- resetNavigation=()=>{points.clear();previous=null;panning=false;blocked=false;gestureBusy=false;};
+ const points=new Map();let previous=null,panning=false,blocked=false,suppressUntil=0,mouse=null;
+ resetNavigation=()=>{mouse=null;viewport.classList.remove("map-panning");points.clear();previous=null;panning=false;blocked=false;gestureBusy=false;};
  const current=()=>Number(viewport.dataset.mapZoom)||1;
  function apply(value,x=viewport.clientWidth/2,y=viewport.clientHeight/2,fromX=x,fromY=y){
   const old=current(),next=Math.max(.3,Math.min(2.5,value));
@@ -107,6 +107,11 @@ export function bindMapNavigation(viewport,onZoom){
  },{passive:false});
  function geometry(){const a=[...points.values()],r=viewport.getBoundingClientRect();return a.length<2?null:{x:((a[0].x+a[1].x)/2-r.left)/uiScale()-viewport.clientLeft,y:((a[0].y+a[1].y)/2-r.top)/uiScale()-viewport.clientTop,d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}}
  viewport.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='mouse'){
+   if(e.button!==0||busy||e.target.closest('button,input,select,textarea,a,.map-drag-handle,[draggable=true]'))return;
+   mouse={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
+   viewport.setPointerCapture(e.pointerId);closeMenu();e.preventDefault();return;
+  }
   if(e.pointerType!=='touch')return;
   points.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(points.size>=2){cancelDrag?.();closeMenu();blocked=true;gestureBusy=true;previous=geometry();suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();}
@@ -114,14 +119,21 @@ export function bindMapNavigation(viewport,onZoom){
   if(blocked)viewport.setPointerCapture(e.pointerId);
  },true);
  viewport.addEventListener('pointermove',e=>{
+  if(mouse&&mouse.id===e.pointerId){
+   if(!(e.buttons&1)){resetNavigation();return;}
+   if(!mouse.moved&&Math.hypot(e.clientX-mouse.startX,e.clientY-mouse.startY)<5)return;
+   mouse.moved=true;gestureBusy=true;viewport.classList.add('map-panning');
+   viewport.scrollLeft-=(e.clientX-mouse.x)/uiScale();viewport.scrollTop-=(e.clientY-mouse.y)/uiScale();
+   mouse.x=e.clientX;mouse.y=e.clientY;suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();return;
+  }
   const old=points.get(e.pointerId);if(!old)return;
   points.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(points.size>=2){const g=geometry();if(previous&&previous.d>0)apply(current()*g.d/previous.d,g.x,g.y,previous.x,previous.y);previous=g;e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}
   else if(blocked){e.preventDefault();e.stopImmediatePropagation();}
   else if(panning){if(!viewport.hasPointerCapture(e.pointerId))viewport.setPointerCapture(e.pointerId);const dx=e.clientX-old.x,dy=e.clientY-old.y;viewport.scrollLeft-=dx/uiScale();viewport.scrollTop-=dy/uiScale();if(Math.abs(dx)+Math.abs(dy)>2)suppressUntil=Date.now()+500;e.preventDefault();}
  },true);
- function end(e){if(!points.has(e.pointerId))return;points.delete(e.pointerId);if(blocked){e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}previous=geometry();if(!points.size){panning=false;blocked=false;gestureBusy=false;}}
- viewport.addEventListener('pointerup',end,true);viewport.addEventListener('pointercancel',end,true);
+ function end(e){if(mouse?.id===e.pointerId){const moved=mouse.moved;mouse=null;gestureBusy=false;viewport.classList.remove('map-panning');if(viewport.hasPointerCapture(e.pointerId))viewport.releasePointerCapture(e.pointerId);if(moved){suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();}return;}if(!points.has(e.pointerId))return;points.delete(e.pointerId);if(blocked){e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}previous=geometry();if(!points.size){panning=false;blocked=false;gestureBusy=false;}}
+ viewport.addEventListener('pointerup',end,true);viewport.addEventListener('pointercancel',end,true);viewport.addEventListener('lostpointercapture',end,true);
  viewport.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
  viewport.addEventListener('dragstart',e=>{if(points.size||blocked)e.preventDefault();},true);
 }

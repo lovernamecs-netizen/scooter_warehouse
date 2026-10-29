@@ -181,3 +181,5 @@ dialog{border:1px solid #dfe6ea;box-shadow:0 24px 80px #172b3e36,0 3px 12px #172
  .month-calendar{--calendar-date:18px;--calendar-body:12px;--calendar-week:16px}
  .month-calendar .month-calendar-day>button{min-height:116px;padding:8px 2px;gap:6px}
 }
+
+.map-viewport{cursor:grab}.map-viewport.map-panning,.map-viewport.map-panning *{cursor:grabbing!important;user-select:none}
