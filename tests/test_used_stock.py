@@ -16,7 +16,7 @@ def test_used_reconditioning_and_photo_lifecycle(env):
  vc('assign',ident,{'number':str(uuid.uuid4()),'scheduled':state()['today']})
  vc('finish_work',ident,{},422)
  profile=complete_profile(state()['today']);bad={**profile,'oil_changed':False}
- vc('used_profile',ident,{'profile':bad,'complete':True},422)
+ vc('used_profile',ident,{'profile':bad,'complete':True});assert v(ident)['used_stock']['ready']
  vc('used_profile',ident,{'profile':bad});assert not v(ident)['used_stock']['ready']
  vc('used_profile',ident,{'profile':{**profile,'tire_front':101},'complete':True},422)
  vc('used_profile',ident,{'profile':profile,'complete':True});assert v(ident)['used_stock']['ready']
@@ -63,3 +63,19 @@ def test_new_vehicle_customer_return_becomes_used_without_old_snapshot_change(en
  assert v(ident)['kind']=='USED'
  assert c.get('/api/used/'+ident,headers=h).json()['profile']=={}
  assert next(x for x in c.get('/api/outbound',headers=h).json() if x['id']==out['id'])['snapshot']==out['snapshot']
+
+
+def test_incomplete_used_profile_can_complete_and_dispatch_without_fabricating_work(env):
+ db,c,h,cmd,state,receive,v,vc,*_=env
+ ident=receive('USED')
+ profile={'mileage':None,'exterior':'','oil_changed':False,'equipment_checked':False,'repairs_done':False,'washed':False,'damage':{'left':{'status':'damaged','note':'현 상태 출고'}}}
+ vc('used_profile',ident,{'profile':profile,'complete':True})
+ assert v(ident)['used_stock']['ready']
+ assert c.get('/api/used/'+ident,headers=h).json()['ready']
+ vc('assign',ident,{'scheduled':state()['today']})
+ vc('finish_work',ident);vc('ready',ident);vc('dispatch',ident)
+ out=next(x for x in c.get('/api/outbound',headers=h).json() if x['vehicle_id']==ident)
+ saved=out['snapshot']['vehicle']['used_reconditioning']
+ assert saved['ready'] and not saved['repairs_done'] and not saved['oil_changed'] and not saved['washed']
+ assert saved['mileage'] is None and saved['damage']['left']['status']=='damaged'
+ assert out['snapshot']['vehicle']['vin']==v(ident)['vin']

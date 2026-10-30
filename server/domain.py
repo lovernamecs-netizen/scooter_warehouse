@@ -515,7 +515,7 @@ def execute(s,u,action,p):
             need(v.kind=='USED' or v.ubis=='INSTALLED','작업완료 전에 유비스 설치를 확인하세요.')
             if v.kind=='USED':
                 from .used_stock import summary
-                need(summary(s,st)['ready'],'중고차 점검과 엔진오일 교환 후 상품화 완료를 확인하세요.')
+                need(summary(s,st)['ready'],'중고차 상품화 완료를 확인하세요.')
             from .bundles import check_complete
             check_complete(s,v,a)
             opts,items=lines(s,a);need(all(l.done>=l.qty for l in opts+items if l.required),'필수 작업 또는 전달품 준비가 완료되지 않았습니다.')

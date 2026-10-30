@@ -24,7 +24,7 @@ def put(s,key,value):
  else:s.add(Setting(key=key,value=value))
 
 def summary(s,st):
- p=read(s,st);return {'ready':bool(p.get('ready')) and not missing(p),'mileage':p.get('mileage'),'status':'상품화 완료' if p.get('ready') and not missing(p) else '상품화 진행' if p else '점검 미등록'}
+ p=read(s,st);return {'ready':bool(p.get('ready')),'mileage':p.get('mileage'),'status':'상품화 완료' if p.get('ready') else '상품화 진행' if p else '점검 미등록'}
 
 def page(s,u,ident,stay_id=None):
  from .domain import get,need,vehicle_dto
@@ -65,7 +65,6 @@ def execute(s,u,action,p):
   data['oil_date']=valid_date(data['oil_date']) if data['oil_date'] else ''
   need(not data['oil_date'] or data['oil_date']<=today(),'오일 교환일은 미래일 수 없습니다.')
   data['ready']=p.get('complete') is True
-  if data['ready']:need(not missing(data),{'message':'상품화 확인 항목을 완료하세요.','missing':missing(data)})
   data.update(updated_at=iso(now()),actor=u.username)
   put(s,'used_profile:'+st.id,data)
   if not data['ready']:

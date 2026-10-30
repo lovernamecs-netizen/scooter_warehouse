@@ -41,7 +41,7 @@ def test_original_download_zip_roles_and_stay_isolation(env):
 
 def test_damage_validation_and_ready_gate(env):
  db,c,h,cmd,state,receive,v,vc,*_=env;ident=receive('USED');p=complete_profile(state()['today'])
- vc('used_profile',ident,{'profile':{**p,'washed':False},'complete':True},422)
+ vc('used_profile',ident,{'profile':{**p,'washed':False},'complete':True});assert v(ident)['used_stock']['ready']
  vc('used_profile',ident,{'profile':{**p,'damage':{'left':{'status':'damaged','note':'카울 흠집'}}}})
  assert c.get('/api/used/'+ident,headers=h).json()['profile']['damage']['left']['note']=='카울 흠집'
  vc('used_profile',ident,{'profile':{**p,'damage':{'unknown':{'status':'normal'}}}},422)
