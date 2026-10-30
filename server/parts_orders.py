@@ -16,7 +16,7 @@ STOCK_DRAFT = dict(MITT=487,SE=46,ST01=187,ST02=None,YC=12,SC=54,WPCX_0=51,
     WPCX_1=46,WNMAX_0=None,WNMAX_1=40,SSP=51,SSN=32,RBP=44,RBN=56,RBF=19,RBX=8,RBA=16,RBZ=1,CUP=348)
 
 def config(data):
-    return copy.deepcopy(data.get('order_rules', {'version':1,'models':{},'defaults':{'B2B':['SC','CUP'],'B2C':['SC']},'sets':{'EPP':{'item_id':'SE','component':'slide'},'TOP01':{'item_id':'ST01','component':'bracket'},'TOP02':{'item_id':'ST02','component':'bracket'}}}))
+    return copy.deepcopy(data.get('order_rules', {'version':1,'models':{},'defaults':{'B2B':['SC','CUP','MITT'],'B2C':['SC']},'sets':{'EPP':{'item_id':'SE','component':'slide'},'TOP01':{'item_id':'ST01','component':'bracket'},'TOP02':{'item_id':'ST02','component':'bracket'}}}))
 
 def plan(s,a):
     row=s.get(Setting,'parts_order:'+a.id) if a else None
@@ -63,7 +63,7 @@ def build(data,model_id,vehicle_kind,p):
         row={'key':key,'part_id':ident,'item':snapshot(i) if i else {'id':None,'code':None,'name':label,'pack':None,'price':None},'qty':qty,'purpose':purpose,'source':source,'origins':[origin]}
         result.append(row);bykey[key]=row
     for ident in defaults:
-        if ident not in excluded:add(ident,'default',('DELIVERY' if model.get('bracket')=='RBF' else 'INSTALL') if channel=='B2B' and ident=='CUP' else ('INSTALL' if model.get('preinstalled_bracket') else None))
+        if ident not in excluded:add(ident,'default',('DELIVERY' if model.get('bracket')=='RBF' else 'INSTALL') if channel=='B2B' and ident=='CUP' else ('INSTALL' if model.get('preinstalled_bracket') else (purposes.get(ident) or items.get(ident,{}).get('purpose') or 'INSTALL') if channel=='B2B' and ident in ['SC','MITT'] else None))
     choice=p.get('set','')
     if choice:
         rule=cfg['sets'].get(choice);need(rule,'미등록 세트입니다.')

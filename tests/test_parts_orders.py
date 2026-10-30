@@ -32,7 +32,7 @@ def dispatch(env,vid,status=200,**extra):
 def row(get,env,key):return next(r for r in get(env[4]()['today'])['report']['rows'] if r['id']==key)
 
 @pytest.mark.parametrize('template,channel,expected',[
-    ('PCX','B2B',{'SC','CUP','WPCX_0'}),('NMAX','B2B',{'SC','CUP','WNMAX_1'}),
+    ('PCX','B2B',{'SC','CUP','MITT','WPCX_0'}),('NMAX','B2B',{'SC','CUP','MITT','WNMAX_1'}),
     ('PCX','B2C',{'SC'}),('NMAX','B2C',{'SC'})])
 def test_defaults(env,template,channel,expected):
     vid,get,_=assigned(env,request(channel),template)
@@ -112,7 +112,7 @@ def test_unknown_pack_and_stock_draft_no_write(env):
 
 def test_rule_model_identity_and_unknown_sets(env):
     configure(env,'FORZA350');data=env[1].get('/api/parts',headers=env[2],params={'day':'2026-10-02','month':'2026-10'}).json()
-    for mid,p in [('fake-PCX',request()),(env[11],request(set='EPP')),(env[11],{'channel':'B2B'})]:
+    for mid,p in [('fake-PCX',request()),(env[11],request(set='EPP'))]:
         r=env[1].post('/api/parts/order-preview',headers=env[2],json={'model_id':mid,'plan':p});assert r.status_code==422,r.text
 
 def test_auto_entry_no_manual_cancel_or_import(env):
@@ -247,3 +247,30 @@ def test_b2b_cup_model_purpose(env,template,purpose):
     cup=next(r for r in env[6](vid)['assignment']['parts_order']['lines'] if r['part_id']=='CUP')
     assert cup['purpose']==purpose and cup['qty']==1
     complete(env,vid);dispatch(env,vid);assert row(get,env,'CUP')['ending']==99
+
+
+def test_b2b_mitt_is_posted_once_only_at_actual_dispatch(env):
+ vid,get,_=assigned(env);assert row(get,env,'MITT')['ending']==100
+ complete(env,vid);env[7]('ubis',vid,{'status':'INSTALLED'});env[7]('finish_work',vid);env[7]('ready',vid)
+ assert row(get,env,'MITT')['ending']==100
+ a=env[6](vid)['assignment'];cid=str(uuid.uuid4());payload={'vehicle_id':vid,'version':env[6](vid)['version'],'handed':{l['id']:l['done'] for l in a['items']}}
+ env[3]('dispatch',payload,cid=cid);env[3]('dispatch',payload,cid=cid)
+ for key in ['SC','CUP','MITT']:assert row(get,env,key)['ending']==99
+
+
+def test_approved_default_repair_preserves_completed_work_and_ledger(env):
+ from server.b2b_defaults_repair import repair
+ from server.parts import load
+ from server.models import User
+ get,cmd=configure(env);rules=get()['rules'];rules['defaults']['B2B']=['SC','CUP'];cmd('rules',rules=rules)
+ vid=env[5]();env[7]('assign',vid,{'scheduled':env[4]()['today'],'parts_order':request()});complete(env,vid)
+ env[7]('ubis',vid,{'status':'INSTALLED'});env[7]('finish_work',vid);env[7]('ready',vid)
+ a=env[6](vid)['assignment'];before=copy.deepcopy(a['options'])
+ with env[0].transaction() as s:
+  _,data=load(s);entries=copy.deepcopy(data['entries']);closings=copy.deepcopy(data['closings'])
+  result=repair(s,s.scalar(select(User).where(User.username=='admin')),a['id']);assert result['existing_work_preserved']
+  _,after=load(s);assert entries==after['entries'] and closings==after['closings']
+ updated=env[6](vid)['assignment'];assert not updated['ready']
+ for old in before:assert next(x for x in updated['options'] if x['id']==old['id'])==old
+ mitt=next(x for x in updated['options'] if x['item'].get('part_id')=='MITT');assert mitt['qty']==1 and mitt['done']==0
+ assert row(get,env,'MITT')['ending']==100
