@@ -327,6 +327,9 @@ def execute(s,u,action,p):
         post_adjustment(s,u,o,adj)
         s.add(adj);v.version+=1;audit(s,u,kind,{'outbound_id':o.id,'reason':reason,'detail':detail},v);return {'vehicle_id':v.id}
     v=get(s,Vehicle,p.get('vehicle_id'));version(v,p)
+    if v.kind=='USED' and action in ['delete_vehicle','archive_vehicle']:
+        from .customer_privacy import permissions
+        need(permissions(s,u)['security_owner'],'최초 admin 계정만 중고차 카드를 삭제할 수 있습니다.',403)
     if action=='delete_vehicle':
         admin(u);need(p.get('confirmation')=='삭제','삭제 확인 문구를 입력하세요.')
         need(not s.scalar(select(Outbound).where(Outbound.vehicle_id==v.id)),'출고 이력이 있는 차량은 삭제할 수 없습니다. 출고 정정을 이용하세요.',409)

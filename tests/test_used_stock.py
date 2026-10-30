@@ -79,3 +79,24 @@ def test_incomplete_used_profile_can_complete_and_dispatch_without_fabricating_w
  assert saved['ready'] and not saved['repairs_done'] and not saved['oil_changed'] and not saved['washed']
  assert saved['mileage'] is None and saved['damage']['left']['status']=='damaged'
  assert out['snapshot']['vehicle']['vin']==v(ident)['vin']
+
+
+def test_used_card_delete_owner_only_preserves_history_and_profile(env):
+ from test_customer_privacy import another
+ from server.models import Vehicle,Stay
+ db,c,h,cmd,state,receive,v,vc,*_=env
+ ident=receive('USED');vc('used_profile',ident,{'profile':complete_profile(state()['today'])})
+ st=v(ident)['stay_id'];saved=c.get('/api/used/'+ident,headers=h).json()['profile']
+ for role in ['admin','worker','viewer']:
+  _,other=another(db,role)
+  for action in ['delete_vehicle','archive_vehicle']:
+   r=c.post('/api/command',headers=other,json={'command_id':str(uuid.uuid4()),'action':action,'payload':{'vehicle_id':ident,'version':v(ident)['version'],'confirmation':'삭제','confirmed_vin':v(ident)['vin'],'reason':'합성 삭제'}})
+   assert r.status_code==403
+ assert v(ident)['stay_id']==st
+ vc('delete_vehicle',ident,{'confirmation':'삭제','reason':'중복 입력 정리'})
+ assert v(ident)['archived'] and v(ident)['stay_id'] is None
+ with db.read() as session:
+  assert session.get(Vehicle,ident) and session.get(Stay,st)
+  assert session.get(Setting,'used_profile:'+st).value==saved
+ history=c.get('/api/history/'+ident,headers=h).json();assert history[-1]['event']=='DELETED'
+ assert not any(x['vehicle_id']==ident for x in c.get('/api/outbound',headers=h).json())
