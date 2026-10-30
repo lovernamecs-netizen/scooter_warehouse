@@ -50,3 +50,11 @@ def observe(page,label):
     page.on('console',lambda m:data['console_error'].append(m.text) if m.type=='error' else None)
     page.on('requestfailed',lambda r:data['requestfailed'].append({'url':r.url.split('?')[0],'failure':r.failure}))
     return data
+
+
+def nav(page,name):
+    target=page.locator('.sidebar [data-page="'+name+'"]')
+    target.wait_for(state='attached')
+    section=target.locator('xpath=ancestor::details[1]')
+    if section.count() and section.get_attribute('open') is None:section.locator('summary').first.click()
+    target.click()

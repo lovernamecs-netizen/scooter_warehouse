@@ -1,17 +1,17 @@
 // Names remain in the current screen only. Persistent command recovery stores IDs.
 export function mountCustomerEditor(root,{api,esc},selected=null){
- let chosen=selected,requestId=crypto.randomUUID(),timer=null,generation=0;
+ let chosen=selected,requestId=crypto.randomUUID(),timer=null,generation=0,observer=null;
  root.innerHTML=`<label>업체 / 주문자 구분<select data-kind><option value="COMPANY">업체</option><option value="PERSON">개인 주문자</option></select></label><label>업체명 또는 주문자명 · 필수<input data-name autocomplete="off" maxlength="120" placeholder="이름 입력 또는 기존 고객 선택"></label><div data-results role="listbox" aria-label="기존 업체·주문자"></div><small data-status>새 이름은 등록 후 주문에 연결됩니다.</small>`;
  const input=root.querySelector('[data-name]'),kind=root.querySelector('[data-kind]'),results=root.querySelector('[data-results]'),status=root.querySelector('[data-status]');
  if(chosen){input.value=chosen.name;kind.value=chosen.kind;status.textContent='기존 고객 선택됨';}
  function showChoices(items){
   const groups=new Map();for(const c of items){const k=c.kind+'|'+c.name.normalize('NFKC').trim().toLocaleLowerCase();if(!groups.has(k))groups.set(k,[]);groups.get(k).push(c);}
   results.innerHTML=[...groups.values()].map(rows=>{const choices=rows.map(c=>`<button type="button" data-choice="${esc(c.id)}" role="option">${rows.length>1?'기록 '+esc(c.id.slice(0,8)):esc(c.name)+' · '+(c.kind==='COMPANY'?'업체':'개인')}</button>`).join('');return rows.length>1?`<details><summary>${esc(rows[0].name)} · 동일 이름 ${rows.length}개 기록</summary>${choices}</details>`:choices;}).join('');
-  results.onclick=e=>{const b=e.target.closest('[data-choice]');if(!b)return;chosen=items.find(c=>c.id===b.dataset.choice);generation++;clearTimeout(timer);input.value=chosen.name;kind.value=chosen.kind;results.innerHTML='';status.textContent='기존 고객 선택됨';};
+  results.onclick=e=>{const b=e.target.closest('[data-choice]');if(!b)return;chosen=items.find(c=>c.id===b.dataset.choice);observer?.disconnect();generation++;clearTimeout(timer);input.value=chosen.name;kind.value=chosen.kind;results.innerHTML='';status.textContent='기존 고객 선택됨';};
  }
- async function lookup(){const n=++generation;try{const data=await api('/customers/search',{method:'POST',body:JSON.stringify({query:input.value})});if(n!==generation||!root.isConnected)return;showChoices(data.items.filter(c=>c.kind===kind.value));}catch{if(n===generation)status.textContent='고객 검색 권한 또는 연결을 확인하세요.';}}
- input.oninput=()=>{chosen=null;generation++;requestId=crypto.randomUUID();status.textContent='새 고객으로 등록됩니다. 기존 업체는 목록에서 선택하세요.';clearTimeout(timer);timer=setTimeout(lookup,250);};
- kind.onchange=()=>{generation++;clearTimeout(timer);results.innerHTML='';chosen=null;requestId=crypto.randomUUID();status.textContent='새 고객으로 등록됩니다.';};
+ async function lookup(after='',append=[]){observer?.disconnect();const n=++generation;try{const data=await api('/customers/search',{method:'POST',body:JSON.stringify({query:input.value,kind:kind.value,after})});if(n!==generation||!root.isConnected)return;const items=[...append,...data.items];showChoices(items);if(data.next){const end=document.createElement('span');end.dataset.customerNext='';end.setAttribute('aria-hidden','true');end.style.display='block';end.style.height='1px';results.append(end);observer=new IntersectionObserver(entries=>{if(entries.some(x=>x.isIntersecting)&&n===generation&&root.isConnected){observer.disconnect();lookup(data.next,items);}});observer.observe(end);}}catch{if(n===generation)status.textContent='고객 검색 권한 또는 연결을 확인하세요.';}}
+ input.oninput=()=>{observer?.disconnect();chosen=null;generation++;requestId=crypto.randomUUID();status.textContent='새 고객으로 등록됩니다. 기존 업체는 목록에서 선택하세요.';clearTimeout(timer);timer=setTimeout(lookup,250);};
+ kind.onchange=()=>{observer?.disconnect();generation++;clearTimeout(timer);results.innerHTML='';chosen=null;requestId=crypto.randomUUID();status.textContent='새 고객으로 등록됩니다.';if(input.value.trim())lookup();};
  root.readCustomer=()=>chosen;
  let saving=null;
  root.saveCustomer=()=>{if(saving)return saving;saving=(async()=>{if(chosen)return chosen.id;const name=input.value.trim();if(!name)throw Error('업체명 또는 주문자명을 입력하세요.');clearTimeout(timer);generation++;try{const result=await api('/customers',{method:'POST',body:JSON.stringify({name,kind:kind.value,request_id:requestId,prevent_duplicate:true})});chosen={id:result.id,name,kind:kind.value};results.innerHTML='';status.textContent='고객 등록됨';return chosen.id;}catch(error){await lookup();throw error;}})().finally(()=>{saving=null;});return saving;};

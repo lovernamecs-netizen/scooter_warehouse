@@ -1,3 +1,4 @@
+from browser_support import nav
 import json,uuid,httpx
 from datetime import date,timedelta
 from pathlib import Path
@@ -15,7 +16,7 @@ try:
  testdb=Database('sqlite:///'+str(Path(runtime[1].name)/'test.db'));backfill(testdb);testdb.engine.dispose()
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path=CHROME,headless=True);page=browser.new_page(viewport={'width':1440,'height':1000});errors=observe(page,'vehicle-inventory')
-  page.goto(runtime[3]);page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload();page.locator('[data-act=nav][data-page=closing]').first.click();expect(page.locator('.vi-panel')).to_be_visible();expect(page.locator('.vi-panel')).to_contain_text('오늘 예상 재고')
+  page.goto(runtime[3]);page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload();nav(page,'closing');page.locator('#vehicle-inventory').locator('xpath=ancestor::details[1]').locator('summary').first.click();expect(page.locator('.vi-panel')).to_be_visible();expect(page.locator('.vi-panel')).to_contain_text('오늘 예상 재고')
   page.locator(f'[data-vinv=day][data-day="{past}"]').click();expect(page.locator('.vi-panel')).to_contain_text('가액 미등록');expect(page.locator('.vi-panel')).to_contain_text('저장 버전 1')
   page.locator('[data-vinv=price]').first.click();page.locator('#vi-form [name=amount]').fill('2000000');page.locator('#vi-form [name=effective_day]').fill(received);page.locator('#vi-form [name=reason]').fill('합성 기본 가액');page.locator('[data-vinv=save-price]').click();expect(page.locator('.vi-panel')).to_contain_text('재확인 필요')
   page.locator('[data-vinv=rebuild]').click();page.locator('#vi-form [name=reason]').fill('가격 근거 확인');page.locator('#vi-form [name=approve]').check();page.locator('[data-vinv=save-rebuild]').click();expect(page.locator('.vi-panel')).to_contain_text('저장 버전 2')
@@ -24,8 +25,8 @@ try:
   page.locator('#vi-form [name=complete]').check();page.locator('#vi-form [name=reason]').fill('합성 수량 대조');page.locator('[data-vinv=save-count]').click();expect(page.locator('.vi-panel')).to_contain_text('실사 확인 완료')
   page.locator('[data-vinv=correct]').click();page.locator('#vi-form [data-correct]').first.select_option('false');page.locator('#vi-form [name=reason]').fill('합성 중복 집계 정정');page.locator('#vi-form [name=approve]').check();page.locator('[data-vinv=save-correct]').click();expect(page.locator('.vi-panel')).to_contain_text('저장 버전 3');expect(page.locator('.vi-panel')).to_contain_text('정정 완료')
   page.screenshot(path=str(RESULTS/'vehicle-calendar-desktop.png'),full_page=True)
-  page.set_viewport_size({'width':390,'height':844});expect(page.locator('.vi-calendar')).to_be_visible();assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1');page.screenshot(path=str(RESULTS/'vehicle-calendar-mobile.png'),full_page=True)
-  page.locator('[data-vinv=month][data-delta="-1"]').click();expect(page.locator('.vi-calendar')).to_be_visible();page.locator('[data-vinv=today]').click();expect(page.locator('.vi-panel')).to_contain_text('오늘 예상 재고');assert page.locator('[data-vinv=rebuild]').count()==0
+  page.set_viewport_size({'width':390,'height':844});expect(page.locator('#vehicle-inventory .month-calendar')).to_be_visible();assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1');page.screenshot(path=str(RESULTS/'vehicle-calendar-mobile.png'),full_page=True)
+  page.locator('[data-vinv=month][data-delta="-1"]').click();expect(page.locator('#vehicle-inventory .month-calendar')).to_be_visible();page.locator('[data-vinv=today]').click();expect(page.locator('.vi-panel')).to_contain_text('오늘 예상 재고');assert page.locator('[data-vinv=rebuild]').count()==0
   # Existing daily closing still appears beneath the calendar.
   expect(page.locator('#report-day')).to_be_visible();assert not errors['pageerror'] and not errors['console_error'] and not errors['requestfailed'],errors
   (RESULTS/'vehicle-inventory-browser.json').write_text(json.dumps({'passed':True,'checks':['calendar','today provisional','past snapshot','price','stale warning','rebuild version','count inspection','admin correction','mobile','month navigation','legacy closing retained'],'errors':errors},ensure_ascii=False,indent=2),encoding='utf-8');browser.close()

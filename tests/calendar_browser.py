@@ -52,8 +52,9 @@ try:
    const red=getComputedStyle(root.querySelector('[data-calendar-day="2026-10-04"] strong')).color;
    const blue=getComputedStyle(root.querySelector('[data-calendar-day="2026-10-10"] strong')).color;
    const holiday=root.querySelector('[data-calendar-day="2026-10-03"]').classList.contains('is-holiday');
-   root.remove();return {sizes,red,blue,holiday,substitute:koreanHoliday('2026-10-05').name,oldConstitution:koreanHoliday('2025-07-17').holiday,newConstitution:koreanHoliday('2026-07-17').holiday};
+   const dateStyle=getComputedStyle(root.querySelector('.month-calendar-day strong'));const dateWeight=dateStyle.fontWeight,dateAlign=dateStyle.alignSelf;root.remove();return {dateWeight,dateAlign,sizes,red,blue,holiday,substitute:koreanHoliday('2026-10-05').name,oldConstitution:koreanHoliday('2025-07-17').holiday,newConstitution:koreanHoliday('2026-07-17').holiday};
   }""")
+  assert typography['dateWeight']=='400' and typography['dateAlign']=='flex-start',typography
   assert len(set(typography['sizes']))==1,typography
   assert typography['red']=='rgb(188, 48, 59)' and typography['blue']=='rgb(37, 99, 166)',typography
   assert typography['holiday'] and typography['substitute']=='대체공휴일'

@@ -1,3 +1,4 @@
+from browser_support import nav
 """Actual server + browser: account-scoped pending replay after closing the tab."""
 import json,httpx
 from playwright.sync_api import sync_playwright,expect
@@ -12,20 +13,20 @@ try:
    browser=p.chromium.launch(executable_path=CHROME,headless=True);context=browser.new_context();page=context.new_page();observed=observe(page,'data-safety')
    def login(page):
     page.goto(base);page.locator('[name=username]').fill('admin');page.locator('[name=password]').fill(PASSWORD);page.locator('#login button').click();expect(page.locator('.topbar')).to_be_visible()
-   login(page);expect(page.locator('.notice[role=status]')).to_contain_text('자동 백업이 꺼져')
-   page.locator('[data-act=photo-storage]').first.click();expect(page.locator('#storage-form')).to_be_visible();expect(page.locator('#modal')).to_contain_text('백업 날짜 보존 수');page.screenshot(path=str(RESULTS/'backup-safety.png'));page.evaluate('document.querySelector("#modal").close()')
-   page.locator('[data-act=receipt]').first.click();page.locator('#model_id').select_option(model);page.locator('#color_id').select_option(color);page.locator('[name=notes]').fill('탭 종료 복구 테스트')
+   login(page);assert page.locator('.notice[role=status]').count()==0
+   nav(page,'settings');page.locator('[data-act=photo-storage]').first.click();expect(page.locator('#storage-form')).to_be_visible();expect(page.locator('#modal')).to_contain_text('백업 보관 일수');page.screenshot(path=str(RESULTS/'backup-safety.png'));page.evaluate('document.querySelector("#modal").close()')
+   nav(page,'receive');page.locator('#model_id').select_option(model);page.locator('#color_id').select_option(color);page.locator('[name=notes]').fill('탭 종료 복구 테스트')
    def lost(route):route.fetch();route.abort('failed')
    page.route('**/api/command',lost);page.locator('[data-act=save-receipt]').click();expect(page.locator('.system-error')).to_be_visible()
    assert len(state()['vehicles'])==len(initial['vehicles'])+1
    page.close();page=context.new_page();observe(page,'data-safety-reopened');login(page)
    # A different account namespace must not expose this pending request.
    assert page.evaluate("async()=>{const {pendingRequest}=await import('/pending-request.js');return pendingRequest('different-user').read()}") is None
-   page.locator('[data-page=settings]').first.click();page.locator('[data-act=retry]').click()
+   nav(page,'settings');page.locator('[data-act=retry]').click()
    expect(page.locator('#toast')).to_contain_text('요청 결과를 확인했습니다.')
    assert page.evaluate("!Object.keys(localStorage).some(k=>k.startsWith('warehousePending.v2:'))")
    assert len(state()['vehicles'])==len(initial['vehicles'])+1
-   page.locator('[data-page=dashboard]').first.click();page.locator('[data-act=receipt]').first.click();page.locator('#model_id').select_option(model);page.locator('#color_id').select_option(color)
+   nav(page,'receive');page.locator('#model_id').select_option(model);page.locator('#color_id').select_option(color)
    page.evaluate("() => {window.originalStorageSet=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){if(k.startsWith('warehousePending.v2:'))throw new DOMException('quota','QuotaExceededError');return window.originalStorageSet.call(this,k,v)};}")
    page.locator('[data-act=save-receipt]').click();expect(page.locator('.system-error')).to_contain_text('저장 요청을 보내지 않았습니다.');assert len(state()['vehicles'])==len(initial['vehicles'])+1
    page.evaluate('() => {Storage.prototype.setItem=window.originalStorageSet;}')

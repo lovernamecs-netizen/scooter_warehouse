@@ -1,6 +1,6 @@
 import {monthCalendar} from './month-calendar.js';
 import {dailyPartsHTML,dispatchSummaryHTML} from './order-parts-ui.js';
-let H,D,selected='',month='',busy=false,pending=null;
+let H,D,selected='',month='',busy=false,pending=null,loadSequence=0;
 const $=s=>document.querySelector(s), all=s=>[...document.querySelectorAll(s)];
 const kinds={DAMAGE:'파손/폐기',VOID:'출고취소 역거래',CORRECTION:'출고 정정',IN:'부품 입고',OUT:'별도 반출',RETURN:'사용 가능 반입',ADJUST:'재고 보정',VEHICLE:'차량 출고 사용',STOCKTAKE:'실사 등록'};
 const esc=x=>H.esc(x),btn=(text,action,extra='')=>`<button type="button" data-part="${action}" ${extra}>${text}</button>`;
@@ -19,7 +19,8 @@ async function command(action,payload){
 async function reload(){await renderParts($('#content'),H,selected);}
 export async function renderParts(target,helpers,day){
  H=helpers;if(!selected)selected=day;month=selected.slice(0,7);
- const data=await H.api(`/parts?day=${selected}&month=${month}`);if(!H.isCurrent())return;D=data;
+ const sequence=++loadSequence,requestedDay=selected,requestedMonth=month,owner=H;
+ const data=await H.api(`/parts?day=${requestedDay}&month=${requestedMonth}`);if(sequence!==loadSequence||H!==owner||selected!==requestedDay||month!==requestedMonth||!target.isConnected||!H.isCurrent())return;D=data;
  const r=D.report,admin=H.user.role==='admin';
  target.innerHTML=`<div class="page-head"><div><div class="eyebrow">PARTS INVENTORY</div><h1>재고 마감</h1></div></div>
  <div class="parts-toolbar"><label>조회 날짜 <input id="parts-day" type="date" value="${selected}"></label>${writable()?`<details class="parts-tools"><summary>부품 입출고 · 관리</summary><div class="parts-tools-grid">${btn('부품 입출고','movement','class="parts-movement-primary"')}${admin?btn('실사 등록','stocktake')+btn('품목·내부 코드','items')+btn('카테고리','categories')+btn('차종·기본품·세트 규칙','rules')+btn('최신 포장수 검토','review-defaults'):''}</div></details>`:''}</div>

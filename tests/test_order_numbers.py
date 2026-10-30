@@ -1,3 +1,4 @@
+from test_customer_privacy import another,new_customer
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from test_workflow import env
@@ -5,10 +6,10 @@ from server.models import Order
 
 def test_shared_sequence_and_retry(env):
  db,c,h,cmd,state,receive,v,vc,*_=env
- token=c.post('/api/login',json={'username':'worker','password':'test-password-123'}).json()['token']
- worker={'Authorization':'Bearer '+token}
+ other,worker=another(db);assert c.post('/api/customers/access',headers=h,json={'user_id':other,'allowed':True}).status_code==200
+ customer=new_customer(c,h)
  ids=[receive() for _ in range(8)]
- requests=[{'command_id':str(uuid.uuid4()),'action':'assign','payload':{'vehicle_id':ident,'version':v(ident)['version'],'scheduled':state()['today'],'number':'ignored'}} for ident in ids]
+ requests=[{'command_id':str(uuid.uuid4()),'action':'assign','payload':{'vehicle_id':ident,'version':v(ident)['version'],'scheduled':state()['today'],'number':'ignored','customer_id':customer}} for ident in ids]
  def run(pair):
   i,req=pair;r=c.post('/api/command',headers=h if i%2==0 else worker,json=req);assert r.status_code==200,r.text
  with ThreadPoolExecutor(max_workers=4) as pool:list(pool.map(run,enumerate(requests)))

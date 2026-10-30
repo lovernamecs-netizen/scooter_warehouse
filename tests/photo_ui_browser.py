@@ -1,3 +1,4 @@
+from browser_support import nav
 """Windows Chrome integration checks using an isolated server/DB and synthetic originals."""
 from pathlib import Path
 import sys,os,io,uuid,json,hashlib,base64,time
@@ -31,7 +32,7 @@ try:
   context=browser.new_context(viewport={'width':1366,'height':768},accept_downloads=True)
   page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)));observe(page,'photo')
   page.goto(base);page.evaluate('(token)=>sessionStorage.setItem("warehouseToken",token)',token);page.reload()
-  page.locator('[data-act=nav][data-page=used]').first.click();page.locator(f'[data-act=used-open][data-id="{vid}"][data-step="3"]').click()
+  nav(page,'used');page.locator(f'[data-act=used-open][data-id="{vid}"][data-step="3"]').click()
   expect(page.locator('.product-photo-grid .photo-drop')).to_have_count(6)
   def drop(selector,files):
    page.locator(selector).first.evaluate('''(el,files)=>{const dt=new DataTransfer();for(const f of files){const bytes=Uint8Array.from(atob(f.data),c=>c.charCodeAt(0));dt.items.add(new File([bytes],f.name,{type:f.type}));}for(const name of ['dragenter','dragover','drop'])el.dispatchEvent(new DragEvent(name,{bubbles:true,cancelable:true,dataTransfer:dt}));}''',files)

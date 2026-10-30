@@ -192,9 +192,20 @@ def create_app(database=None):
         from .vin_ocr import recognize
         with db.transaction() as s:need(user(s,request).role in ['admin','worker'],'권한이 없습니다.',403)
         return recognize(p.get('image',''))
+    @app.get('/api/state/version')
+    def state_version(request:Request):
+        from .customer_privacy import permissions
+        from .domain import today
+        with db.read() as s:
+            u=user(s,request)
+            result={'revision':s.get(Guard,1).revision,'today':today(),'user':{'id':u.id,'username':u.username,'role':u.role,**permissions(s,u)}}
+            if u.role=='admin':
+                from .photo_store import backup_warnings
+                result['backup_warnings']=backup_warnings(s)
+            return result
     @app.get('/api/state')
     def get_state(request:Request):
-        with db.transaction() as s:
+        with db.read() as s:
             u=user(s,request);result=state(s,u)
             if u.role=='admin':
                 from .photo_store import backup_warnings

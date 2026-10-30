@@ -5,7 +5,7 @@ from contextlib import closing
 from datetime import datetime
 from sqlalchemy import select
 from .models import Setting
-from .photo_store import config,read_file,stamp,safe,atomic
+from .photo_store import config,stamp,safe,atomic
 from .used_stock import put
 LOCK=threading.Lock()
 
@@ -41,48 +41,50 @@ def prune_verified(dest,retention):
 def backup(db):
  if not LOCK.acquire(blocking=False):raise ValueError('백업이 이미 진행 중입니다.')
  try:
-  with db.transaction() as s:
+  # Capture the DB and immutable file inventory under a short writer reservation.
+  # Compression and verification never hold the operational database writer lock.
+  with db.read() as s:
    if s.bind.dialect.name!='sqlite':raise ValueError('사진 통합 백업은 SQLite 전용입니다.')
-   cfg=config(s);dest=Path(cfg['backup_path']);dest.mkdir(parents=True,exist_ok=True)
-   name='ScooterWarehouse-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f')+'.zip';target=dest/name
-   manifest={'version':1,'created_at':stamp(),'files':{},'roots':cfg['roots'],'producer':'ScooterWarehouse-data-safety-1'}
-   with tempfile.TemporaryDirectory(dir=dest) as tmp:
-    snapshot=Path(tmp)/'warehouse.db'
-    # BEGIN IMMEDIATE blocks app writers. Another read connection sees the last committed state.
+   initial=config(s);dest=Path(initial['backup_path']);dest.mkdir(parents=True,exist_ok=True)
+  name='ScooterWarehouse-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f')+'.zip';target=dest/name
+  with tempfile.TemporaryDirectory(dir=dest) as tmp:
+   snapshot=Path(tmp)/'warehouse.db';files=[]
+   with db.transaction() as s:
+    cfg=config(s)
+    if cfg!=initial:raise ValueError('백업 설정이 변경되었습니다. 다시 실행하세요.')
+    manifest={'version':1,'created_at':stamp(),'files':{},'roots':cfg['roots'],'producer':'ScooterWarehouse-data-safety-1'}
     with closing(sqlite3.connect(s.bind.url.database)) as source,closing(sqlite3.connect(snapshot)) as output:source.backup(output)
-    with zipfile.ZipFile(Path(tmp)/name,'w',zipfile.ZIP_DEFLATED,compresslevel=1) as z:
-     def add(name,raw):z.writestr(name,raw);manifest['files'][name]={'size':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
-     h=hashlib.sha256()
-     with snapshot.open('rb') as source:
-      while chunk:=source.read(1024*1024):h.update(chunk)
-     z.write(snapshot,'warehouse.db');manifest['files']['warehouse.db']={'size':snapshot.stat().st_size,'sha256':h.hexdigest()}
-     for row in s.scalars(select(Setting).where(Setting.key.startswith('used_media:'))):
-      d=row.value
-      if 'root_id' not in d:continue
-      # Include soft-deleted/replaced originals for audit and recovery.
-      for preview in [False,True]:
-       raw,_,_=read_file(s,d,preview);rel=d['thumbnail'] if preview else d['path'];add('photos/'+d['root_id']+'/'+rel,raw)
-     folders=set()
-     for row in s.scalars(select(Setting).where(Setting.key.startswith('used_media:'))):
-      d=row.value
-      if 'root_id' in d:folders.add((d['root_id'],d['vehicle_id'],d['stay_id']))
-     for root_id,vehicle_id,stay_id in folders:
-      directory=safe(cfg['roots'][root_id],vehicle_id+'/'+stay_id+'/Metadata')
-      for metadata in directory.glob('*.json'):add('photos/'+root_id+'/'+vehicle_id+'/'+stay_id+'/Metadata/'+metadata.name,metadata.read_bytes())
-     # Preserve interrupted uploads not yet referenced by the DB for manual recovery.
-     for root_id,root_path in cfg['roots'].items():
-      for journal in (Path(root_path)/'.journal').glob('*.json'):
-       if s.get(Setting,'photo_upload:'+journal.stem):continue
-       raw_journal=journal.read_bytes();entry=json.loads(raw_journal)
-       prefix='recovery/'+root_id+'/'+journal.stem+'/'
-       add(prefix+'journal.json',raw_journal)
-       for field in ['path','thumbnail']:
-        source=safe(root_path,entry[field])
-        if source.is_file():add(prefix+field+'/'+source.name,source.read_bytes())
-     z.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
-    verify(Path(tmp)/name)
-    os.replace(Path(tmp)/name,target)
-   put(s,'photo_backup_status',{'ok':True,'at':stamp(),'file':str(target),'files':len(manifest['files'])})
+    folders=set()
+    for row in s.scalars(select(Setting).where(Setting.key.startswith('used_media:'))):
+     d=row.value
+     if 'root_id' not in d:continue
+     root=cfg['roots'][d['root_id']]
+     files.append(('photos/'+d['root_id']+'/'+d['path'],safe(root,d['path']),d['sha256']))
+     files.append(('photos/'+d['root_id']+'/'+d['thumbnail'],safe(root,d['thumbnail']),None))
+     folders.add((d['root_id'],d['vehicle_id'],d['stay_id']))
+    for root_id,vehicle_id,stay_id in folders:
+     directory=safe(cfg['roots'][root_id],vehicle_id+'/'+stay_id+'/Metadata')
+     for metadata in directory.glob('*.json'):files.append(('photos/'+root_id+'/'+vehicle_id+'/'+stay_id+'/Metadata/'+metadata.name,metadata,None))
+    for root_id,root_path in cfg['roots'].items():
+     for journal in (Path(root_path)/'.journal').glob('*.json'):
+      if s.get(Setting,'photo_upload:'+journal.stem):continue
+      raw=journal.read_bytes();entry=json.loads(raw);prefix='recovery/'+root_id+'/'+journal.stem+'/'
+      files.append((prefix+'journal.json',raw,None))
+      for field in ['path','thumbnail']:
+       source=safe(root_path,entry[field])
+       if source.is_file():files.append((prefix+field+'/'+source.name,source,None))
+   with zipfile.ZipFile(Path(tmp)/name,'w',zipfile.ZIP_DEFLATED,compresslevel=1) as z:
+    for archive,source,expected in [('warehouse.db',snapshot,None),*files]:
+     h=hashlib.sha256();size=0
+     if isinstance(source,bytes):z.writestr(archive,source);h.update(source);size=len(source)
+     else:
+      with source.open('rb') as src,z.open(archive,'w',force_zip64=True) as dst:
+       while chunk:=src.read(1024*1024):dst.write(chunk);h.update(chunk);size+=len(chunk)
+     if expected and h.hexdigest()!=expected:raise ValueError('원본 파일 무결성 오류')
+     manifest['files'][archive]={'size':size,'sha256':h.hexdigest()}
+    z.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
+   verify(Path(tmp)/name);os.replace(Path(tmp)/name,target)
+  with db.transaction() as s:put(s,'photo_backup_status',{'ok':True,'at':stamp(),'file':str(target),'files':len(manifest['files'])})
   # Prune only our own verified-format archives, after a successful new backup.
   prune_verified(dest,cfg['retention'])
   return {'file':str(target),'files':len(manifest['files']),'at':manifest['created_at']}

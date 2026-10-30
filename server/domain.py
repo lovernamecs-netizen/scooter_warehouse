@@ -1,4 +1,4 @@
-import re,json,hashlib,uuid
+import re,json,hashlib,uuid,copy
 from datetime import datetime,date,time,timedelta,timezone
 from zoneinfo import ZoneInfo
 from collections import Counter
@@ -67,31 +67,31 @@ def stage_set(s,stay_id,value=None):
 def unique_option(s,v,mid,a=None,exclude=None):
     need(not any(e.qty>0 and e.item.get('master_id')==mid and (exclude is None or e.line_id!=exclude) for e in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id))),'이미 장착된 품목입니다. 기존 장착품을 확인하세요.',409)
     if a:need(not any(l.master_id==mid and l.qty>0 and l.id!=exclude for l in lines(s,a)[0]),'이미 선택한 장착품입니다.',409)
-def location(s,st):
-    p=s.get(Placement,st.id) if st else None
+def location(s,st,loaded=None):
+    p=(loaded["placements"].get(st.id) if loaded is not None else s.get(Placement,st.id)) if st else None
     if not p:
-        entry=staging(s).get(st.id) if st else None
+        entry=(loaded["staging"] if loaded is not None else staging(s)).get(st.id) if st else None
         if not entry:return None
         return {'kind':'DISPATCH_STAGING','slot_id':None,'zone_id':None,'zone':'출고대기','label':'공통 출고대기','warehouse_id':None,'warehouse':'전체 창고 공통'}
     slot=get(s,Slot,p.slot_id);z=get(s,Zone,slot.zone_id)
-    cfg=wh.config(s);warehouse_id=wh.wid(cfg,z.id);w=next(w for w in cfg['items'] if w['id']==warehouse_id)
+    cfg=loaded['warehouses'] if loaded is not None else wh.config(s);warehouse_id=wh.wid(cfg,z.id);w=next(w for w in cfg['items'] if w['id']==warehouse_id)
     return {'slot_id':slot.id,'zone_id':z.id,'zone':z.name,'label':slot.label,'warehouse_id':warehouse_id,'warehouse':w['name']}
-def vehicle_dto(s,v,u=None):
+def vehicle_dto(s,v,u=None,loaded=None):
     model=get(s,Master,v.model_id);color=get(s,Master,v.color_id)
-    brand=s.get(Master,model.detail.get('brand_id',''))
-    st=s.scalar(select(Stay).where(Stay.vehicle_id==v.id,Stay.closed_at==None))
-    a=assignment(s,st) if st else None
-    loc=location(s,st)
+    brand=s.get(Master,model.detail['brand_id']) if model.detail.get('brand_id') else None
+    st=loaded['stays'].get(v.id) if loaded is not None else s.scalar(select(Stay).where(Stay.vehicle_id==v.id,Stay.closed_at==None))
+    a=(loaded['assignments'].get(st.id) if loaded is not None else assignment(s,st)) if st else None
+    loc=location(s,st,loaded)
     state=('보관처리' if v.archived else '출고완료') if not st else ('출고대기' if a and a.ready else {'PENDING':'작업대기','IN_PROGRESS':'작업중','COMPLETED':'작업완료'}.get(a.work) if a else '재고' if loc and loc.get('zone_id') and get(s,Zone,loc['zone_id']).kind in ['STORAGE','USED'] else '배치대기' if v.ubis=='INSTALLED' else '유비스 대기')
     result={'id':v.id,'vin':'' if v.vin.startswith('@PENDING:') else v.vin,'vin_pending':v.vin.startswith('@PENDING:'),'reference':'임시-'+v.id[:8],'model_id':v.model_id,'model':model.name,'brand':brand.name if brand else '', 'brand_id':brand.id if brand else '', 'color_id':v.color_id,'color':color.name,'color_hex':color.detail.get('hex','#94a3b8'),'year':v.year,'manufactured_month':v.manufactured_month,'kind':v.kind,'plate':v.plate,'smart_key':v.smart_key if not u or u.role in ['admin','worker'] else '', 'serial_number':v.serial_number,'ubis_number':v.ubis_number,'notes':v.notes,'ubis':v.ubis,'version':v.version,'archived':v.archived,'stay_id':st.id if st else None,'received_at':iso(st.received_at) if st else None,'location':loc,'state':state,'assignment':None}
     if a:
-        opts,items=lines(s,a);o=get(s,Order,a.order_id)
+        opts,items=(loaded['options'].get(a.id,[]),loaded['deliveries'].get(a.id,[])) if loaded is not None else lines(s,a);o=get(s,Order,a.order_id)
         from .parts_orders import plan
-        result['assignment']={'parts_order':plan(s,a),'id':a.id,'order_id':o.id,'number':o.number,'notes':o.notes,'scheduled':a.scheduled,'work':a.work,'ready':a.ready,'options':[line_dto(l) for l in opts],'items':[line_dto(l) for l in items]}
+        result['assignment']={'parts_order':copy.deepcopy(loaded['plans'].get(a.id)) if loaded is not None else plan(s,a),'id':a.id,'order_id':o.id,'number':o.number,'notes':o.notes,'scheduled':a.scheduled,'work':a.work,'ready':a.ready,'options':[line_dto(l) for l in opts],'items':[line_dto(l) for l in items]}
     if v.kind=='USED':
         from .used_stock import summary
         result['used_stock']=summary(s,st)
-    result['equipment']=[{'id':e.id,'item':e.item,'qty':e.qty,'origin':e.origin,'line_id':e.line_id} for e in s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0))]
+    result['equipment']=[{'id':e.id,'item':e.item,'qty':e.qty,'origin':e.origin,'line_id':e.line_id} for e in (loaded['equipment'].get(v.id,[]) if loaded is not None else s.scalars(select(Equipment).where(Equipment.vehicle_id==v.id,Equipment.qty>0)))]
     from .equipment_edit import context
     for item in result['equipment']:
         item.update(context(s,s.get(Equipment,item['id']),st,a)[2] if u and u.role in ['admin','worker'] and v.kind=='NEW' else {'can_correct':False,'can_carry':False})
@@ -102,7 +102,21 @@ def layout(s):
     return {'warehouses':cfg['items'],'zones':[{'warehouse_id':wh.wid(cfg,z.id),'id':z.id,'name':z.name,'kind':z.kind,'rows':z.rows,'cols':z.cols,'x':z.x,'y':z.y,'model_ids':z.model_ids,'active':z.active,'version':z.version,'slots':[{'id':sl.id,'row':sl.row,'col':sl.col,'label':sl.label,'enabled':sl.enabled,'stay_id':ps.get(sl.id)} for sl in s.scalars(select(Slot).where(Slot.zone_id==z.id))]} for z in rows(s,Zone)],'objects':(s.get(Setting,'map_objects').value.get('objects',[]) if s.get(Setting,'map_objects') else [])}
 def state(s,u):
     from .customer_privacy import permissions
-    vehicles=[vehicle_dto(s,v,u) for v in rows(s,Vehicle)]
+    # Request-local batches: no cross-user cache and no mutations of business rows.
+    from collections import defaultdict
+    # Keep strong references: SQLAlchemy's identity map otherwise releases these rows.
+    masters=rows(s,Master);zones=rows(s,Zone);slots=rows(s,Slot)
+    stays={st.vehicle_id:st for st in s.scalars(select(Stay).where(Stay.closed_at==None))}
+    assignments={a.stay_id:a for a in s.scalars(select(Assignment).where(Assignment.status=='ACTIVE'))}
+    loaded={'stays':stays,'assignments':assignments,'placements':{p.stay_id:p for p in rows(s,Placement)},'staging':staging(s),'warehouses':wh.config(s)}
+    for key,cls,field in [('equipment',Equipment,'vehicle_id'),('options',OptionLine,'assignment_id'),('deliveries',DeliveryLine,'assignment_id')]:
+        grouped=defaultdict(list)
+        query=select(cls).where(cls.qty>0) if cls is Equipment else select(cls).join(Assignment,cls.assignment_id==Assignment.id).where(Assignment.status=='ACTIVE')
+        for row in s.scalars(query):grouped[getattr(row,field)].append(row)
+        loaded[key]=grouped
+    orders=list(s.scalars(select(Order).join(Assignment,Assignment.order_id==Order.id).where(Assignment.status=='ACTIVE')))
+    loaded['plans']={r.key[len('parts_order:'):]:r.value for r in s.scalars(select(Setting).where(Setting.key.in_(select('parts_order:'+Assignment.id).where(Assignment.status=='ACTIVE'))))}
+    vehicles=[vehicle_dto(s,v,u,loaded) for v in rows(s,Vehicle)]
     if u.role=='ubis': vehicles=[v for v in vehicles if v['stay_id']];[v.update(assignment=None,equipment=[],notes='') for v in vehicles]
     return {'revision':get(s,Guard,1).revision,'server_time':iso(now()),'today':today(),'user':{'id':u.id,'username':u.username,'role':u.role,**permissions(s,u)},'masters':[{'id':m.id,'kind':m.kind,'name':m.name,'detail':m.detail,'active':m.active,'version':m.version} for m in rows(s,Master)],'vehicles':vehicles,'layout':layout(s)}
 def report(s,d):

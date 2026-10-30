@@ -35,7 +35,7 @@ try:
   gesture(.6,2);assert page.evaluate('document.documentElement.style.zoom')=='0.9'
   for _ in range(6):gesture(.6)
   assert page.evaluate('document.documentElement.style.zoom')=='0.7'
-  page.reload();assert page.evaluate('document.documentElement.style.zoom')=='0.7'
+  page.reload();expect(page.locator('.content')).to_be_visible();assert page.evaluate('document.documentElement.style.zoom')=='0.7'
   gesture(1.5);gesture(1.5);assert page.evaluate('document.documentElement.style.zoom')=='0.9'
   page.set_viewport_size({'width':400,'height':850});assert page.evaluate('document.documentElement.style.zoom')=='1'
   page.set_viewport_size({'width':900,'height':800});page.wait_for_timeout(200)

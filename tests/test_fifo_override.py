@@ -1,3 +1,4 @@
+from test_customer_privacy import another,new_customer
 import uuid
 from test_workflow import env
 
@@ -16,5 +17,8 @@ def test_worker_override_and_no_exception_for_normal_fifo(env):
  db,c,h,cmd,state,receive,v,vc,z,*_=env
  old,new=receive(),receive();vc('vehicle_edit',old,{'manufactured_month':'2024-01'});vc('vehicle_edit',new,{'manufactured_month':'2026-01'})
  token=c.post('/api/login',json={'username':'worker','password':'test-password-123'}).json()['token']
- r=c.post('/api/command',headers={'Authorization':'Bearer '+token},json={'command_id':str(uuid.uuid4()),'action':'assign','payload':{'vehicle_id':new,'version':v(new)['version'],'number':'worker-exception','scheduled':state()['today'],'fifo_override_reason':'출고 조건에 맞는 신형 선택'}});assert r.status_code==200,r.text
+ r=c.post('/api/command',headers={'Authorization':'Bearer '+token},json={'command_id':str(uuid.uuid4()),'action':'assign','payload':{'vehicle_id':new,'version':v(new)['version'],'number':'worker-exception','scheduled':state()['today'],'fifo_override_reason':'출고 조건에 맞는 신형 선택'}});assert r.status_code==403,r.text
+ other,ah=another(db);assert c.post('/api/customers/access',headers=h,json={'user_id':other,'allowed':True}).status_code==200
+ payload={'vehicle_id':new,'version':v(new)['version'],'scheduled':state()['today'],'fifo_override_reason':'합성 관리자 예외','customer_id':new_customer(c,h)}
+ assert c.post('/api/command',headers=ah,json={'command_id':str(uuid.uuid4()),'action':'assign','payload':payload}).status_code==200
  vc('assign',old,{'number':'normal','scheduled':state()['today']});hs=c.get('/api/history/'+old,headers=h).json();assert not any(x['event']=='FIFO_OVERRIDE' for x in hs)
