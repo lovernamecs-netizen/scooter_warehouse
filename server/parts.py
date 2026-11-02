@@ -239,6 +239,22 @@ def mutate(s,u,p):
                 if rule.get(k):need(rule[k] in items,'미등록 구성품입니다.')
         for channel,ids in cfg['defaults'].items():need(channel in ['B2B','B2C'] and isinstance(ids,list) and all(k in items for k in ids),'기본품 설정 오류')
         for k,rule in cfg['sets'].items():need(rule.get('item_id') in items and rule.get('component') in ['slide','bracket'],'세트 설정 오류')
+        # Editor references immutable item IDs, never mutable display codes.
+        def validate_purposes(holder):
+            need(isinstance(holder.get('default_purposes',{}),dict),'기본품 용도 설정 오류')
+            for channel,mapping in holder.get('default_purposes',{}).items():
+                need(channel in ['B2B','B2C'] and isinstance(mapping,dict),'기본품 용도 설정 오류')
+                need(all(k in items and v in ['INSTALL','DELIVERY'] for k,v in mapping.items()),'기본품 용도를 확인하세요.')
+        validate_purposes(cfg)
+        for rule in cfg['models'].values():validate_purposes(rule)
+        referenced=set(k for ids in cfg['defaults'].values() for k in ids)
+        for rule in cfg['models'].values():
+            referenced.update(rule[k] for k in ['slide','bracket','screen_b2b','screen_b2c'] if rule.get(k))
+            referenced.update(k for ids in rule.get('defaults',{}).values() for k in ids)
+        for rule in cfg['sets'].values():
+            referenced.add(rule['item_id'])
+            modes=rule.get('modes',{});need(isinstance(modes,dict) and set(modes)<={'item','component'} and all(v in ['INSTALL','DELIVERY'] for v in modes.values()),'세트 용도 설정 오류')
+        need(all(k in items and items[k]['active'] for k in referenced),'사용 중지 또는 삭제된 품목을 구성에서 교체·제외하세요.')
         cfg['version']=old['version']+1;data['order_rules']=cfg;data['audit'].append({'at':at,'actor':u.username,'action':'RULES','before':old,'after':cfg})
     elif action=='review_defaults':
         need(u.role=='admin' and p.get('checked') is True,'관리자 검토 확인이 필요합니다.',403)

@@ -13,12 +13,12 @@ import {mountLegacyParts} from './legacy-parts.js';
 import {pendingRequest} from './pending-request.js';
 import {safeMessage,showError} from './errors.js';
 import {installVehicleHold} from './vehicle-hold.js';
-import {mountPlan,dailyPartsHTML} from './order-parts-ui.js';
+import {mountPlan,dailyPartsHTML} from './order-parts-ui.js?v=20261101';
 import {photoStorage} from './photo-storage.js';
 import {capturePhoto,previewBase64,ocrBase64,recognizeVin} from './camera.js?v=20261027-system-vin-v1';
 import {createUsedStock} from './used-stock.js';
 import {installNotifications} from './notifications.js';
-import {renderParts} from './parts.js?v=20261030-stability-v1';
+import {renderParts,partsRulesDirty} from './parts.js?v=20261101-parts-builder-v1';
 import './keyboard-layout.js';
 import {sortInventory} from './inventory-sort.js';
 let mapAssignmentRefreshPending=false;
@@ -101,7 +101,7 @@ async function renderPage(){rememberMapView();const mapWindow=page==='map'&&$('.
  else if(['stock','used','ubis','work','schedule'].includes(cur))target.innerHTML=stockPage();
  else if(cur==='map'){target.innerHTML=workMapBanner()+mapPage();restoreMapView();if(mapWindow)window.scrollTo(mapWindow.x,mapWindow.y);highlightWorkVehicle();}
  else if(cur==='outbound'){await renderDispatchCalendar(target,{api,esc,today:S.today,vehicles:S.vehicles,isCurrent:()=>page==='outbound',setHistory:rows=>{window.outData=rows},vehicleTable,customerAccess:S.user.customer_access,historyHTML:outPage,select:day=>{selectedDay=day;renderPage()}},selectedDay)}
- else if(cur==='parts'){target.innerHTML=head('재고 마감','불러오는 중…');await renderParts(target,{api,esc,modal,toast,err,user:S.user,isCurrent:()=>page==='parts',setBusy:v=>formSafety.setBusy(v)},S.today);}
+ else if(cur==='parts'){target.innerHTML=head('재고 마감','불러오는 중…');await renderParts(target,{api,esc,modal,toast,err,user:S.user,isCurrent:()=>page==='parts',mark:()=>formSafety.mark(),setBusy:v=>formSafety.setBusy(v)},S.today);}
  else if(cur==='purchases'){await renderPurchases(target,{api,esc,modal,toast,user:S.user,isCurrent:()=>page==='purchases',refresh,vehicle:detail,setBusy:v=>formSafety.setBusy(v)},S.today);}
  else if(cur==='settings')target.innerHTML=settingsPage();
  else if(cur==='receive'){target.innerHTML=head('차량 입고','차종·색상·제조년월을 등록하세요. VIN은 나중에 입력할 수 있습니다.',button('신규 입고','receipt','','primary'))+`<section class="panel"><h2>오늘 입고한 현재 재고</h2>${vehicleTable(operations(S.vehicles.filter(v=>v.stay_id),S.today).received)}</section>`}
@@ -336,7 +336,7 @@ window.addEventListener('resize',adaptFold);
 
 async function boot(){if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});if(token){try{await refresh();selectedDay=S?.today||dateNow()}catch{}}render();setInterval(async()=>{if(!token||polling||isMapBusy()||document.hidden||$('#modal').open)return;polling=true;try{const old=S?.revision,oldDay=S?.today,oldUser=JSON.stringify(S?.user);await refresh(false,true);if(oldUser!==JSON.stringify(S?.user)){render();return;}if(page==='map'&&S?.revision!==old)mapAssignmentRefreshPending=true;const status=$('.online');if(status){status.textContent=online?'● 연결됨':'● 오프라인 조회';status.classList.toggle('off',!online)}if(page!=='parts'&&(S?.revision!==old||oldDay!==S?.today||(page==='map'&&mapAssignmentRefreshPending))&&!isMapBusy()&&!$('#modal').open&&![...document.querySelectorAll('input,textarea,select')].includes(document.activeElement)){renderPage();mapAssignmentRefreshPending=false}}catch{}finally{polling=false}},5000)}
 const usedStock=createUsedStock({api,send,modal,button,esc,field,toast,download,detail,user:()=>S.user,today:()=>S.today,vehicle,render:renderPage,masters,formSafety});
-formSafety.setDirtyProbe(()=>usedStock.isDirty());
+formSafety.setDirtyProbe(()=>usedStock.isDirty()||partsRulesDirty());
 const notifications=installNotifications({api,identity:()=>token&&S?.user.role!=='ubis'?token:'',modal,button,esc,toast});
 boot();
 

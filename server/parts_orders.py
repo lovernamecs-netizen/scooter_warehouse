@@ -62,8 +62,13 @@ def build(data,model_id,vehicle_kind,p):
             return
         row={'key':key,'part_id':ident,'item':snapshot(i) if i else {'id':None,'code':None,'name':label,'pack':None,'price':None},'qty':qty,'purpose':purpose,'source':source,'origins':[origin]}
         result.append(row);bykey[key]=row
+    configured_purposes={**cfg.get('default_purposes',{}).get(channel,{}),**model.get('default_purposes',{}).get(channel,{})}
     for ident in defaults:
-        if ident not in excluded:add(ident,'default',('DELIVERY' if model.get('bracket')=='RBF' else 'INSTALL') if channel=='B2B' and ident=='CUP' else ('INSTALL' if model.get('preinstalled_bracket') else (purposes.get(ident) or items.get(ident,{}).get('purpose') or 'INSTALL') if channel=='B2B' and ident in ['SC','MITT'] else None))
+        if ident in excluded:continue
+        purpose=purposes.get(ident) or configured_purposes.get(ident)
+        if channel=='B2B' and ident=='CUP':purpose='DELIVERY' if model.get('bracket')=='RBF' else 'INSTALL'
+        elif not purpose and (model.get('preinstalled_bracket') or channel=='B2B' and ident in ['SC','MITT']):purpose='INSTALL'
+        add(ident,'default',purpose)
     choice=p.get('set','')
     if choice:
         rule=cfg['sets'].get(choice);need(rule,'미등록 세트입니다.')
@@ -72,7 +77,7 @@ def build(data,model_id,vehicle_kind,p):
         need(all(m in ['INSTALL','DELIVERY','OMIT'] for m in modes.values()),'세트 장착/전달 선택 오류')
         need(not modes or any(modes.get(k,'INSTALL')!='OMIT' for k in ['item','component']),'세트 품목을 하나 이상 선택하세요.')
         for key,ident in [('item',rule['item_id']),('component',model.get(rule['component']))]:
-            mode=modes.get(key,'INSTALL')
+            mode=modes.get(key,rule.get('modes',{}).get(key,'INSTALL'))
             need(mode=='INSTALL' or ident not in p.get('install',[]),'세트 선택과 추가 장착이 충돌합니다. 추가 장착을 해제하세요.')
             if mode=='OMIT':continue
             factory=key=='component' and rule['component']=='bracket' and vehicle_kind=='NEW' and model.get('factory_rack')
