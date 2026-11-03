@@ -39,6 +39,7 @@ def explain_failure(code: str = "", detail: str = "") -> dict:
     code = str(code or "").strip()[:50]
     # 공급자 오류 설명에 민감한 요청 헤더/토큰이 노출되지 않도록 원문은 제한합니다.
     detail = str(detail or "").strip()[:250]
+    detail = re.sub(r"(?i)authorization\s*[:=]\s*bearer\s+\S+", "Authorization=[비공개]", detail)
     detail = re.sub(r"(?i)(api[_ -]?key|api[_ -]?secret|authorization|token|password)\s*[:=]\s*\S+",
                     r"\1=[비공개]", detail)
     haystack = (code + " " + detail).lower()
