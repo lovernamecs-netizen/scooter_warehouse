@@ -1,0 +1,30 @@
+/* 보험증권 업무 도구 한정 스타일. 기존 창고 화면에 영향 없음. */
+.insurance-card{margin-top:18px}
+.insurance-card h2{margin-bottom:8px}
+.insurance-card .panel-head p{margin:0}
+.insurance-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:16px 0}
+.insurance-upload{display:inline-flex;align-items:center;justify-content:center;border:1px solid #9eb9b6;background:#ecf5f3;color:#234f4b;font-size:12px;border-radius:8px;padding:10px 13px;cursor:pointer;margin:0}
+.insurance-upload.secondary{background:#f5f7fa;color:#384c58;border-color:#d3dce2}
+.insurance-upload input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+.insurance-upload:focus-within{outline:2px solid #5aada1;outline-offset:2px}
+.insurance-summary{color:#355f5b;font-size:13px;font-weight:700;padding:14px 0}
+.insurance-table{white-space:normal;min-width:850px}
+.insurance-table th{white-space:nowrap}
+.insurance-table td{vertical-align:top;min-width:145px}
+.insurance-table td:first-child{min-width:150px}
+.insurance-table td:nth-child(2){min-width:195px}
+.insurance-table input{font-size:12px;padding:8px 10px;min-width:150px}
+.insurance-table small{display:block;line-height:1.5;margin-top:5px;word-break:break-word}
+.insurance-table button{padding:6px 9px;font-size:12px;margin:4px 4px 0 0}
+.insurance-warning{color:#a13d38}
+.insurance-error-fields{display:grid;grid-template-columns:140px minmax(190px,1fr) auto;align-items:end;gap:10px;margin:12px 0 18px}
+.insurance-error-fields button{white-space:nowrap}
+.insurance-card details{margin-top:12px}
+.insurance-card details summary{cursor:pointer;text-decoration:underline}
+.insurance-card pre{background:#fff;border:1px solid #e0d6c4;border-radius:6px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+dialog.insurance-preview{width:min(1000px,98vw);max-height:94dvh;overflow:auto;border:1px solid #dae3e5;border-radius:12px;padding:16px;background:white}
+.insurance-preview::backdrop{background:rgba(0,0,0,.55)}
+.insurance-preview-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.insurance-preview p{margin:12px 0;color:#6f797d}
+.insurance-preview img{display:block;width:100%;height:auto;object-fit:contain;border:1px solid #ddd}
+@media(max-width:720px){.insurance-error-fields{grid-template-columns:1fr}.insurance-actions{align-items:stretch}.insurance-upload{min-height:40px}.insurance-card{padding:14px}}
