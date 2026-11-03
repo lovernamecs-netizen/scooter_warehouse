@@ -276,6 +276,46 @@ def create_app(database=None):
         finally:
             await file.close()
 
+    @app.get('/api/insurance/mms/settings')
+    def insurance_mms_settings(request:Request):
+        from .insurance_settings import public_settings
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'보험증권 관리 권한이 없습니다.',403)
+        return public_settings()
+
+    @app.put('/api/insurance/mms/settings')
+    def insurance_mms_settings_save(p:dict,request:Request):
+        from .insurance_settings import save_account
+        from .insurance_documents import InsuranceDocumentError
+        with db.transaction() as s:
+            admin(user(s,request))
+        try:
+            return save_account(p)
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+
+    @app.put('/api/insurance/mms/template')
+    def insurance_mms_template_save(p:dict,request:Request):
+        from .insurance_settings import save_template
+        from .insurance_documents import InsuranceDocumentError
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'MMS 문구 수정 권한이 없습니다.',403)
+        try:
+            return save_template(p.get('msg_template',''))
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+
+    @app.post('/api/insurance/mms/send')
+    def insurance_mms_send(p:dict,request:Request):
+        from .insurance_coolsms import send_one
+        from .insurance_documents import InsuranceDocumentError
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'MMS 발송 권한이 없습니다.',403)
+        try:
+            return send_one(p)
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+
     @app.post('/api/insurance/mms/explain')
     def insurance_mms_explain(p:dict,request:Request):
         from .insurance_mms import explain_failure
