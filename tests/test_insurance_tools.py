@@ -94,7 +94,7 @@ def test_pdf_color_layout_and_white_mask():
     assert result["mask_rect"] == [330, 400, 585, 435]
     record = result["pages"][0]
     assert record["within_limit"]
-    assert record["size_bytes"] <= 199 * 1024
+    assert record["size_bytes"] <= 199_000
     image = Image.open(io.BytesIO(base64.b64decode(record["jpeg_base64"])))
     assert image.mode == "RGB"
     assert abs(image.width / image.height - 600 / 850) < 0.002
