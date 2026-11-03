@@ -124,7 +124,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
       '<div><label>오류 내용</label><input id="insurance-error-detail" placeholder="예: 잔액이 부족합니다." maxlength="250"></div>' +
       '<button type="button" data-insurance="diagnose">오류 설명 확인</button></div>' +
       '<div id="insurance-error-result" aria-live="polite"></div>' +
-    '</details>'; 
+    '</details>';
   const el = selector => container.querySelector(selector);
   let sender = null;
   const selected = new Set();
