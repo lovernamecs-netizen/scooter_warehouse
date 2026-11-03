@@ -16,7 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
-from .insurance_documents import InsuranceDocumentError, MAX_JPEG_BYTES, normalize_plate
+from .insurance_documents import InsuranceDocumentError, MAX_JPEG_BYTES, normalize_plate, plate_candidates
 from .insurance_mms import explain_failure
 from .insurance_settings import credentials
 
@@ -29,7 +29,7 @@ def _validate(data: dict) -> tuple[str, str, bytes, str]:
     if not re.fullmatch(r"01[016789]\d{7,8}", recipient):
         raise InsuranceDocumentError("받는 사람의 휴대전화 번호를 확인해 주세요.")
     plate = normalize_plate(data.get("plate", ""))
-    if not re.fullmatch(r"[가-힣0-9]{5,20}", plate):
+    if not plate or plate not in plate_candidates(plate):
         raise InsuranceDocumentError("차량번호를 확인해 주세요.")
     message = str(data.get("text", "")).strip()
     if "{차량번호}" in message:
