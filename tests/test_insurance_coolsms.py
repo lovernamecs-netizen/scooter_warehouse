@@ -136,3 +136,39 @@ def test_unconfigured_account_is_blocked(tmp_path, monkeypatch):
     monkeypatch.setattr(insurance_settings, "_secret", lambda name: "")
     with pytest.raises(InsuranceDocumentError, match="설정"):
         insurance_settings.credentials()
+
+
+def test_legacy_coolsms_adapter_preserves_original_mms_parameters(monkeypatch, tmp_path):
+    """원래 Tkinter 코드와 동일한 legacy Message(...).send(params) 계약 보존."""
+    import sys
+    import types
+    sent = {}
+    pkg = types.ModuleType("sdk")
+    pkg.__path__ = []
+    api_pkg = types.ModuleType("sdk.api")
+    api_pkg.__path__ = []
+    msg_module = types.ModuleType("sdk.api.message")
+    class FakeMessage:
+        def __init__(self, key, secret):
+            sent["credentials"] = (key, secret)
+        def send(self, params):
+            sent.update(params)
+            assert Path(params["image"]).exists()
+            return {"success_count": 1, "error_count": 0, "group_id": "test-legacy"}
+    msg_module.Message = FakeMessage
+    monkeypatch.setitem(sys.modules, "sdk", pkg)
+    monkeypatch.setitem(sys.modules, "sdk.api", api_pkg)
+    monkeypatch.setitem(sys.modules, "sdk.api.message", msg_module)
+    image_path = tmp_path / "sample.jpg"
+    image_path.write_bytes(b"\xff\xd8\xff\xd9")
+    result = insurance_coolsms._send_with_provider(
+        image_path, "legacy-key", "legacy-secret",
+        "01011112222", "01012345678", "테스트 보험 고지문"
+    )
+    assert result["state"] == "accepted"
+    assert sent["credentials"] == ("legacy-key", "legacy-secret")
+    assert sent["type"] == "mms"
+    assert sent["to"] == "01012345678"
+    assert sent["from"] == "01011112222"
+    assert sent["text"] == "테스트 보험 고지문"
+    assert sent["image"] == str(image_path)
