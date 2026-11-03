@@ -1,0 +1,6 @@
+# Install only when enabling document tools; no warehouse dependency upgrades.
+PyMuPDF==1.28.2
+xlrd==2.0.2
+keyring==25.7.0
+solapi==5.0.3
+# Provider calls are mocked in tests; actual delivery remains a rollout check.

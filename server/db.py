@@ -18,6 +18,7 @@ class Database:
                 dbapi.execute('PRAGMA busy_timeout=30000')
                 dbapi.execute('PRAGMA journal_mode=WAL')
     def init(self,seed_catalog=True):
+        from .insurance_api import InsuranceSend
         Base.metadata.create_all(self.engine)
         with self.transaction() as s:
             if not s.get(Guard,1): s.add(Guard(id=1,revision=0))

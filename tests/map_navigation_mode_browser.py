@@ -17,35 +17,28 @@ try:
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path=CHROME,headless=True);page=browser.new_page(viewport={'width':1000,'height':900},has_touch=True);errors=observe(page,'map-navigation-mode')
   page.goto(r[3]);page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload();nav(page,'map')
-  button=page.locator('[data-act=map-pan-mode]');expect(button).to_have_attribute('aria-pressed','false');button.click();expect(button).to_have_attribute('aria-pressed','true');expect(page.locator('.map-navigation-mode')).to_have_count(1)
-  page.locator('.slot').first.click();expect(page.locator('#modal')).not_to_be_visible()
+  expect(page.locator('[data-act=map-pan-mode]')).to_have_count(0)
+  expect(page.locator('[data-act=zoom]')).to_have_count(0)
   slot=page.locator('.slot[data-vehicle]:not([data-vehicle=""])').first
-  expect(slot).to_be_visible();box=slot.bounding_box();cdp_hold=page.context.new_cdp_session(page)
+  slot.click();expect(page.locator('#modal')).to_be_visible();page.locator('[data-act=close]').click()
+  slot.scroll_into_view_if_needed();box=slot.bounding_box();cdp_hold=page.context.new_cdp_session(page)
   cdp_hold.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'id':1,'x':box['x']+box['width']/2,'y':box['y']+box['height']/2}]});page.wait_for_timeout(2100);cdp_hold.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
-  expect(page.locator('.map-context')).to_have_count(0);expect(page.locator('[data-act=cancel-move]')).to_have_count(0);expect(page.locator('#modal')).not_to_be_visible()
-  page.screenshot(path=str(RESULTS/'map-navigation-mode.png'))
-  button.click();expect(button).to_have_attribute('aria-pressed','false')
-  page.locator('.slot').first.click();expect(page.locator('#modal')).to_be_visible();page.locator('[data-act=close]').click()
-  page.locator('[data-act=edit-map]').click();expect(page.locator('.map-canvas.editing')).to_have_count(1);button.click();expect(page.locator('.map-canvas.editing')).to_have_count(0)
-  zoom_before=float(page.locator('.map-viewport').get_attribute('data-map-zoom'));page.locator('[data-act=zoom][data-delta="0.1"]').click();assert float(page.locator('.map-viewport').get_attribute('data-map-zoom'))>zoom_before
-  # Test geometry in a large scrollable canvas, independent of warehouse dimensions.
-  page.evaluate('''async()=>{document.documentElement.style.zoom='1';document.body.innerHTML='<div class="map-viewport" data-map-zoom="1" style="position:absolute;left:10px;top:10px;width:600px;height:400px;overflow:auto;touch-action:none"><div style="width:2000px;height:1600px"><div class="map-canvas" style="width:2000px;height:1600px"><button class="slot" style="position:absolute;left:500px;top:500px">Vehicle</button></div></div></div>';const v=document.querySelector('.map-viewport');const {bindMapNavigation}=await import('/map-editor.js?v=20261102-map-mode-v1');bindMapNavigation(v,()=>{},{panMode:true});v.scrollLeft=400;v.scrollTop=400;}''')
+  expect(page.locator('[data-act=cancel-move]')).to_be_visible();page.wait_for_timeout(500);page.locator('[data-act=cancel-move]').click()
+  assert business()==before
+  page.evaluate('''async()=>{document.documentElement.style.zoom='1';document.body.innerHTML='<dialog id="modal"></dialog><div class="map-viewport" data-map-zoom="1" style="position:absolute;left:10px;top:10px;width:600px;height:400px;overflow:auto;touch-action:none"><div style="width:2000px;height:1600px"><div class="map-canvas" style="width:2000px;height:1600px"><button class="slot" style="position:absolute;left:500px;top:500px">Vehicle</button></div></div></div>';const v=document.querySelector('.map-viewport');const {bindMapNavigation}=await import('/map-editor.js');bindMapNavigation(v);v.scrollLeft=400;v.scrollTop=400;}''')
   cdp=page.context.new_cdp_session(page)
   def touch(kind,pts):
    cdp.send('Input.dispatchTouchEvent',{'type':kind,'touchPoints':[dict(x=x,y=y,id=i) for i,x,y in pts]});page.wait_for_timeout(35)
   def geometry():return page.locator('.map-viewport').evaluate('(v)=>[v.scrollLeft,v.scrollTop,Number(v.dataset.mapZoom)]')
   a=geometry();touch('touchStart',[(1,300,250)]);touch('touchMove',[(1,240,200)]);touch('touchEnd',[]);b=geometry();assert b[0]>a[0]+50 and b[1]>a[1]+40 and b[2]==a[2],(a,b)
-  # Translate two fingers together: neither pinch zoom nor two-finger pan in this mode.
-  a=geometry();touch('touchStart',[(1,200,240),(2,400,240)]);touch('touchMove',[(1,170,200),(2,370,200)]);b=geometry();assert a==b,(a,b)
-  touch('touchMove',[(1,168,200),(2,372,200)]);assert geometry()[2]==a[2] # 4px jitter
-  touch('touchMove',[(1,120,200),(2,420,200)]);b=geometry();assert b[2]>a[2]*1.4,(a,b)
-  touch('touchMove',[(1,210,200),(2,330,200)]);assert geometry()[2]<a[2]*.7
-  # Lift one finger, continue panning without scale jump.
-  touch('touchEnd',[(2,330,200)]);a=geometry();touch('touchMove',[(1,190,180)]);b=geometry();assert b[2]==a[2] and b[0]>a[0],(a,b);touch('touchEnd',[])
-  # Cancellation and a new gesture must not inherit stale pinch state.
-  touch('touchStart',[(1,200,220),(2,400,220)]);touch('touchCancel',[]);a=geometry();touch('touchStart',[(1,300,250)]);touch('touchMove',[(1,280,230)]);touch('touchEnd',[]);assert geometry()[2]==a[2]
+  # Two fingers no longer zoom or pan; adding a second finger cancels panning.
+  a=geometry();touch('touchStart',[(1,200,240),(2,400,240)]);touch('touchMove',[(1,120,200),(2,420,200)]);touch('touchEnd',[]);assert geometry()==a
+  # Mouse drag on blank canvas; wheel scroll must not change the map scale.
+  a=geometry();page.mouse.move(350,280);page.mouse.down();page.mouse.move(280,230,steps=8);page.mouse.up();b=geometry();assert b[0]>a[0]+60 and b[1]>a[1]+40 and b[2]==a[2]
+  page.mouse.wheel(0,80);assert geometry()[2]==a[2]
+  touch('touchStart',[(1,300,250)]);touch('touchCancel',[]);a=geometry();touch('touchStart',[(1,300,250)]);touch('touchMove',[(1,280,230)]);touch('touchEnd',[]);assert geometry()[0]>a[0]
   assert business()==before
   assert not errors['pageerror'],errors
   browser.close()
- print('PASS mode button, selection/hold lock, one-touch pan, parallel two-touch stable, jitter threshold, pinch in/out, two-to-one transition, cancellation, business data unchanged')
+ print('PASS no mode/zoom controls, card selection/2-second hold, blank one-finger/mouse pan, no pinch zoom, cancellation, unchanged business data')
 finally:stop(r)

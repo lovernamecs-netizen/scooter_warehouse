@@ -41,7 +41,13 @@ def stop(runtime):
         try:process.wait(timeout=10)
         except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
     if OBSERVATIONS:(RESULTS/('browser-network-'+str(process.pid)+'.json')).write_text(json.dumps(OBSERVATIONS,ensure_ascii=False,indent=2),encoding='utf-8')
-    log.close();shutil.copy2(Path(temp.name)/'server.log',RESULTS/('server-'+str(process.pid)+'.log'));temp.cleanup()
+    log.close();shutil.copy2(Path(temp.name)/'server.log',RESULTS/('server-'+str(process.pid)+'.log'))
+    # Windows may briefly retain child-process/antivirus handles after taskkill.
+    for attempt in range(10):
+        try:temp.cleanup();break
+        except PermissionError:
+            if attempt==9:raise
+            time.sleep(.2)
 
 OBSERVATIONS={}
 def observe(page,label):

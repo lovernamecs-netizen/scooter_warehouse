@@ -7,11 +7,11 @@ document.addEventListener('pointerdown',e=>{if(menu&&!menu.contains(e.target))cl
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenu();cancelDrag?.()} });
 window.addEventListener('blur',()=>{closeMenu();cancelDrag?.()});
 window.addEventListener('resize',closeMenu);
-export function bindMapEditor({state,editing,panMode=false,zoom,onZoom,send,refresh,render,zoneEdit,slotAction,vehicleMove,objectsEdit,restructure,enableEdit,toast}){
+export function bindMapEditor({state,editing,send,refresh,render,zoneEdit,slotAction,vehicleMove,objectsEdit,restructure,enableEdit,toast}){
  closeMenu();
  const canvas=document.querySelector('.map-canvas');if(!canvas)return;
  const viewport=canvas.closest('.map-viewport');
- bindMapNavigation(viewport,onZoom,{panMode});
+ bindMapNavigation(viewport);
  const admin=state.user.role==='admin';
  let step=Number(localStorage.getItem('warehouseSnap'))||20;
  if(![10,20,40].includes(step))step=20;
@@ -84,66 +84,31 @@ export function bindMapEditor({state,editing,panMode=false,zoom,onZoom,send,refr
 // Local view gestures do not save or move warehouse data.
 let gestureBusy=false,resetNavigation=null;
 window.addEventListener('blur',()=>resetNavigation?.());
-export function bindMapNavigation(viewport,onZoom,{panMode=false}={}){
+export function bindMapNavigation(viewport){
  resetNavigation?.();
- const canvas=viewport.querySelector('.map-canvas'),spacer=canvas.parentElement;
- viewport.classList.toggle('map-navigation-mode',panMode);
- const points=new Map();let previous=null,panning=false,blocked=false,suppressUntil=0,mouse=null,pinch=null,frame=0;
- // Coalesce both pointer updates so parallel movement is not mistaken for a pinch.
- function flushPinch(){frame=0;if(!pinch||pinch.d<20||points.size!==2)return;const g=geometry();
-  if(!pinch.started&&Math.abs(g.d-pinch.d)<Math.max(8,pinch.d*.04))return;
-  pinch.started=true;apply(pinch.zoom*g.d/pinch.d,pinch.x,pinch.y);
- }
- function stopFrame(){if(frame)cancelAnimationFrame(frame);frame=0;}
- resetNavigation=()=>{stopFrame();pinch=null;mouse=null;viewport.classList.remove("map-panning");points.clear();previous=null;panning=false;blocked=false;gestureBusy=false;};
- const current=()=>Number(viewport.dataset.mapZoom)||1;
- function apply(value,x=viewport.clientWidth/2,y=viewport.clientHeight/2,fromX=x,fromY=y){
-  const old=current(),next=Math.max(.3,Math.min(2.5,value));
-  const wx=(viewport.scrollLeft+fromX)/old,wy=(viewport.scrollTop+fromY)/old;
-  spacer.style.width=parseFloat(canvas.style.width)*next+'px';spacer.style.height=parseFloat(canvas.style.height)*next+'px';
-  canvas.style.transform=`scale(${next})`;viewport.dataset.mapZoom=String(next);
-  viewport.scrollLeft=wx*next-x;viewport.scrollTop=wy*next-y;
-  const label=document.querySelector('#map-zoom-label');if(label)label.textContent=Math.round(next*100)+'%';
-  onZoom(next);
- }
- viewport.zoomBy=delta=>{if(!busy&&!gestureBusy)apply(current()+delta)};
- viewport.addEventListener('wheel',e=>{
-  e.preventDefault();closeMenu();if(busy||gestureBusy)return;
-  const r=viewport.getBoundingClientRect(),units=e.deltaMode===1?16:e.deltaMode===2?viewport.clientHeight:1;
-  apply(current()*Math.exp(-Math.max(-240,Math.min(240,e.deltaY*units))*.002),(e.clientX-r.left)/uiScale()-viewport.clientLeft,(e.clientY-r.top)/uiScale()-viewport.clientTop);
- },{passive:false});
- function geometry(){const a=[...points.values()],r=viewport.getBoundingClientRect();return a.length<2?null:{x:((a[0].x+a[1].x)/2-r.left)/uiScale()-viewport.clientLeft,y:((a[0].y+a[1].y)/2-r.top)/uiScale()-viewport.clientTop,d:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}}
+ let drag=null,suppressUntil=0;
+ function reset(){const old=drag;drag=null;gestureBusy=false;viewport.classList.remove('map-panning');if(old&&viewport.hasPointerCapture(old.id))viewport.releasePointerCapture(old.id);}
+ resetNavigation=reset;
  viewport.addEventListener('pointerdown',e=>{
-  if(e.pointerType==='mouse'){
-   if(e.button!==0||busy||!panMode&&e.target.closest('button,input,select,textarea,a,.map-drag-handle,[draggable=true]'))return;
-   mouse={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
-   viewport.setPointerCapture(e.pointerId);closeMenu();e.preventDefault();return;
-  }
-  if(e.pointerType!=='touch')return;
-  points.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(panMode){cancelDrag?.();closeMenu();e.preventDefault();e.stopImmediatePropagation();viewport.setPointerCapture(e.pointerId);if(points.size===2){const g=geometry();pinch={...g,zoom:current(),started:false};}else{stopFrame();pinch=null;}}
-  if(points.size>=2){cancelDrag?.();closeMenu();blocked=true;gestureBusy=true;previous=geometry();suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();}
-  else{panning=panMode||!e.target.closest('.map-drag-handle');gestureBusy=true;}
-  if(blocked)viewport.setPointerCapture(e.pointerId);
+  if(e.button!==0||busy)return;
+  if(!e.isPrimary){if(drag){suppressUntil=Date.now()+500;reset();}return;}
+  // Slots (including empty slots) and edit handles retain their existing actions.
+  if(e.target.closest('button,input,select,textarea,a,.slot-shell,.map-object,.map-drag-handle,[draggable=true]'))return;
+  drag={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
+  gestureBusy=true;closeMenu();viewport.setPointerCapture(e.pointerId);e.preventDefault();
  },true);
  viewport.addEventListener('pointermove',e=>{
-  if(mouse&&mouse.id===e.pointerId){
-   if(!(e.buttons&1)){resetNavigation();return;}
-   if(!mouse.moved&&Math.hypot(e.clientX-mouse.startX,e.clientY-mouse.startY)<5)return;
-   mouse.moved=true;gestureBusy=true;viewport.classList.add('map-panning');
-   viewport.scrollLeft-=(e.clientX-mouse.x)/uiScale();viewport.scrollTop-=(e.clientY-mouse.y)/uiScale();
-   mouse.x=e.clientX;mouse.y=e.clientY;suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();return;
-  }
-  const old=points.get(e.pointerId);if(!old)return;
-  points.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(panMode&&points.size>=2){if(points.size===2&&!frame)frame=requestAnimationFrame(flushPinch);e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}
-  else if(points.size>=2){const g=geometry();if(previous&&previous.d>0)apply(current()*g.d/previous.d,g.x,g.y,previous.x,previous.y);previous=g;e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}
-  else if(blocked&&!panMode){e.preventDefault();e.stopImmediatePropagation();}
-  else if(panning||panMode){if(!viewport.hasPointerCapture(e.pointerId))viewport.setPointerCapture(e.pointerId);const dx=e.clientX-old.x,dy=e.clientY-old.y;viewport.scrollLeft-=dx/uiScale();viewport.scrollTop-=dy/uiScale();if(Math.abs(dx)+Math.abs(dy)>2)suppressUntil=Date.now()+500;e.preventDefault();}
+  if(!drag||drag.id!==e.pointerId)return;
+  if(e.pointerType==='mouse'&&!(e.buttons&1)){reset();return;}
+  if(!drag.moved&&Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)<6)return;
+  drag.moved=true;viewport.classList.add('map-panning');
+  viewport.scrollLeft-=(e.clientX-drag.x)/uiScale();viewport.scrollTop-=(e.clientY-drag.y)/uiScale();
+  drag.x=e.clientX;drag.y=e.clientY;suppressUntil=Date.now()+500;
+  e.preventDefault();e.stopImmediatePropagation();
  },true);
- function end(e){if(mouse?.id===e.pointerId){const moved=mouse.moved;mouse=null;gestureBusy=false;viewport.classList.remove('map-panning');if(viewport.hasPointerCapture(e.pointerId))viewport.releasePointerCapture(e.pointerId);if(moved){suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();}return;}if(!points.has(e.pointerId))return;if(panMode){stopFrame();flushPinch();pinch=null;}points.delete(e.pointerId);if(blocked){e.preventDefault();e.stopImmediatePropagation();suppressUntil=Date.now()+500;}previous=geometry();if(!points.size){panning=false;blocked=false;gestureBusy=false;}}
- viewport.addEventListener('pointerup',end,true);viewport.addEventListener('pointercancel',end,true);viewport.addEventListener('lostpointercapture',end,true);
- viewport.addEventListener('click',e=>{if(panMode||Date.now()<suppressUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
- viewport.addEventListener('contextmenu',e=>{if(panMode){e.preventDefault();e.stopImmediatePropagation();}},true);
- viewport.addEventListener('dragstart',e=>{if(panMode||points.size||blocked)e.preventDefault();},true);
+ function end(e){if(drag?.id!==e.pointerId)return;const moved=drag.moved;reset();if(moved){suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();}}
+ for(const name of ['pointerup','pointercancel','lostpointercapture'])viewport.addEventListener(name,end,true);
+ viewport.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
+ viewport.addEventListener('dragstart',e=>{if(drag)e.preventDefault();},true);
+ // No map wheel/pinch zoom. Wheel scrolling and the app-wide UI scale stay independent.
 }

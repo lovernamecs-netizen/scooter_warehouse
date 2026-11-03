@@ -35,6 +35,8 @@ def create_app(database=None):
     def user(s,request):return authorize(s,request.headers.get('Authorization','').removeprefix('Bearer '))
     from .google_login import install as install_google_login
     install_google_login(app,db,user)
+    from .insurance_api import install as install_insurance
+    install_insurance(app,db,user)
     @app.exception_handler(IntegrityError)
     async def integrity(request,exc):return JSONResponse(status_code=409,content={'detail':'중복 등록 또는 다른 기기와의 충돌입니다. 최신 정보를 다시 확인하세요.'})
     @app.exception_handler(KeyError)

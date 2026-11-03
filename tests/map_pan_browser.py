@@ -12,8 +12,8 @@ try:
   cdp.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':250,'y':240,'id':1},{'x':400,'y':240,'id':2}]})
   cdp.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':200,'y':190,'id':1},{'x':350,'y':190,'id':2}]})
   cdp.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
-  after=scroll();assert after[0]>before[0]+45 and after[1]>before[1]+45,(before,after)
+  after=scroll();assert after==before,(before,after)
   assert abs(float(page.locator('.map-viewport').get_attribute('data-map-zoom'))-1)<.01
   browser.close()
- print('PASS actual Chrome mouse drag and emulated two-touch pan without zoom change. Android hardware unverified.')
+ print('PASS actual Chrome mouse drag and two-touch ignored without zoom change. Android hardware unverified.')
 finally:stop(r)
