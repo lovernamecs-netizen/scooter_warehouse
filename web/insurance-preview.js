@@ -213,6 +213,8 @@ function reset() {
     previewData: createSamples(),
   });
   // 미리보기는 실제 업로드를 전혀 하지 않는 것으로 분리.
+  const sendBadge = root.querySelector('.insurance-send-card .panel-head .badge.blue');
+  if (sendBadge) sendBadge.textContent = '모의 MMS · 과금 없음';
   root.querySelectorAll('input[type=file]').forEach(input => {
     input.disabled = true;
     input.title = '샘플 미리보기에서 실제 파일을 선택할 수 없습니다.';
@@ -223,6 +225,9 @@ function reset() {
   });
   $('#preview-state').textContent = '준비 완료 · 가상 보험증권 3건 · 실제 발송 0건';
 }
+
+const originalConfirm = window.confirm.bind(window);
+window.confirm = message => originalConfirm('[샘플 UI 미리보기 · 실제 발송 없음]\n' + String(message).replace(/유료 발송/g,'모의 발송'));
 
 $('#preview-reset').addEventListener('click', reset);
 $('#preview-popout').addEventListener('click', () => {
