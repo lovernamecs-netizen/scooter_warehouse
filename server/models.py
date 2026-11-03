@@ -312,3 +312,14 @@ class PurchaseReviewEvent(Base):
     data: Mapped[dict]=mapped_column(JSON)
     actor: Mapped[str]
     at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+
+# Additive query indexes; no business-row migration or history rewriting.
+LONG_TERM_INDEXES = [
+    Index('ix_adjustment_outbound_kind',Adjustment.outbound_id,Adjustment.kind),
+    Index('ix_adjustment_at',Adjustment.at),
+    Index('ix_history_event_at_vehicle',History.event,History.at,History.vehicle_id),
+    Index('ix_stay_received_at',Stay.received_at),
+    Index('ix_stay_closed_at',Stay.closed_at),
+    Index('ix_stay_first_placed_at',Stay.first_placed_at),
+    Index('ix_assignment_status_scheduled',Assignment.status,Assignment.scheduled),
+]

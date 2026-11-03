@@ -30,6 +30,8 @@ class Database:
                 if column not in columns:s.execute(text(f"ALTER TABLE vehicles ADD COLUMN {column} VARCHAR NOT NULL DEFAULT ''"))
             if not schema:s.add(Setting(key='schema_version',value={'version':2}))
             else:schema.value={'version':2}
+            from .models import LONG_TERM_INDEXES
+            for index in LONG_TERM_INDEXES:index.create(s.connection(),checkfirst=True)
             from .customer_privacy import pin_owner
             pin_owner(s)
             from .bundles import catalog

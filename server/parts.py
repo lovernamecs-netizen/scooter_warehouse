@@ -30,8 +30,8 @@ def integer(x,minimum=0):
     v=int(x);need(minimum<=v<=10000000,'수량 범위 오류');return v
 
 def initial():return {'items':json.loads((Path(__file__).parent/'parts_seed.json').read_text(encoding='utf-8')),'entries':[],'closings':[],'audit':[]}
-def load(s):
-    b=s.get(PartsBook,1);return (b.revision,copy.deepcopy(b.data)) if b else (0,initial())
+def load(s,copy_data=True):
+    b=s.get(PartsBook,1);return (b.revision,copy.deepcopy(b.data) if copy_data else b.data) if b else (0,initial())
 def live(data):
     cancelled={e['target'] for e in data['entries'] if e['kind']=='CANCEL'}
     return [e for e in data['entries'] if e['kind']!='CANCEL' and e['id'] not in cancelled]
@@ -51,9 +51,19 @@ def formatted(item,q):
 def count_order(e):
     return (e['day'],0 if e.get('scope')=='START_OF_DAY' else 1,e.get('count_at',e['at']),e.get('count_id',e['id']))
 
-def report(data,d):
-    day(d);events=live(data);items=data['items'];previous=(date.fromisoformat(d)-timedelta(days=1)).isoformat()
-    def balance(until):
+class ReportContext:
+    # Request-local only. Never reuse across revisions/users or mutate ledger entries.
+    def __init__(self,data):
+        from collections import defaultdict
+        self.events=live(data);self.daily=defaultdict(list);self.closings={};self.balances={}
+        for event in self.events:self.daily[event['day']].append(event)
+        for closing in data['closings']:self.closings[closing['day']]=closing
+
+
+def report(data,d,context=None):
+    context=context or ReportContext(data)
+    day(d);events=context.events;items=data['items'];previous=(date.fromisoformat(d)-timedelta(days=1)).isoformat()
+    def calculate_balance(until):
         bs=[e for e in events if e['kind']=='STOCKTAKE' and e['day']<=until]
         base=max(bs,key=count_order) if bs else None
         # Preserve the exact legacy calculation/signature until a partial count exists.
@@ -82,8 +92,13 @@ def report(data,d):
                 deps.add(e['id'])
                 if vals.get(ident) is not None:vals[ident]+=line['delta']
         return vals,base,list(deps),bases
+    def balance(until):
+        if until not in context.balances:
+            if len(context.balances)>=3:context.balances.pop(next(iter(context.balances)))
+            context.balances[until]=calculate_balance(until)
+        return context.balances[until]
     opening,base,_,_=balance(previous);ending,endbase,deps,endbases=balance(d)
-    daily=[e for e in events if e['day']==d];totals=Counter();rows=[]
+    daily=context.daily.get(d,[]);totals=Counter();rows=[]
     for i in sorted(items,key=lambda x:(x['order'],x['id'])):
         sums=Counter()
         for e in daily:
@@ -98,7 +113,7 @@ def report(data,d):
         for k in ['inbound','vehicle','outbound','returned','damage']:totals[k]+=row[k]
     # A later stocktake terminates dependency on previous transactions, while same-day audit remains visible.
     signature=hashof({'day':d,'rows':rows,'deps':sorted(deps),'daily':sorted(e['id'] for e in daily)})
-    cs=[c for c in data['closings'] if c['day']==d];closing=cs[-1] if cs else None
+    closing=context.closings.get(d)
     return {'day':d,'rows':rows,'totals':dict(totals),'base_day':base['day'] if base else None,'inventory_base_day':endbase['day'] if endbase else None,'inventory_confirmed':bool(endbase and all(v is not None for v in endbase['quantities'].values())),'uncounted_items':sum(v is None for v in ending.values()),'stocktake':bool(endbase and endbase['day']==d),'signature':signature,'status':('재확인 필요' if closing['signature']!=signature else '확정') if closing else (('실사 확정' if all(v is not None for v in endbase['quantities'].values()) else '실사 일부 입력') if endbase and endbase['day']==d else ('미확정' if daily else '미입력')),'closing':closing,'entries':daily}
 
 def source_warnings(s,data,d):
@@ -113,18 +128,19 @@ def view(s,u,d,month):
     need(u.role!='ubis','권한이 없습니다.',403);day(d)
     try:y,m=map(int,month.split('-'));count=calendar.monthrange(y,m)[1]
     except (ValueError,TypeError):need(False,'월 형식 오류')
-    rev,data=load(s);r=report(data,d);r['warnings']=source_warnings(s,data,d)
+    rev,data=load(s,copy_data=False);context=ReportContext(data);r=report(data,d,context);r['warnings']=source_warnings(s,data,d)
     days=[]
     for n in range(1,count+1):
-        x=report(data,f'{y:04}-{m:02}-{n:02}');days.append({k:x[k] for k in ['day','totals','stocktake','status']})
+        x=report(data,f'{y:04}-{m:02}-{n:02}',context);days.append({k:x[k] for k in ['day','totals','stocktake','status']})
     used={e.get('outbound_id') for e in live(data) if e['kind']=='VEHICLE'}
     outs=[]
     for o in s.scalars(select(Outbound).where(Outbound.day==d)):
         adj=list(s.scalars(select(Adjustment).where(Adjustment.outbound_id==o.id)))
         outs.append({'id':o.id,'vin':o.snapshot['vehicle']['vin'],'model':o.snapshot['vehicle']['model'],'used':o.id in used,'void':any(a.kind=='VOID' for a in adj),'adjusted':bool(adj),'options':o.snapshot['options'],'items':o.snapshot['items']})
-    from .parts_orders import config,TEMPLATES,STOCK_DRAFT,daily
+    from .parts_orders import config,TEMPLATES,STOCK_DRAFT,daily,month_counts
     shared=daily(s,d)
-    for x in days:x['vehicles']=daily(s,x['day'])['counts']
+    counts=month_counts(s,month)
+    for x in days:x['vehicles']=counts.get(x['day'],{})
     return {'rules':config(data),'templates':TEMPLATES,'stock_draft':STOCK_DRAFT,'categories':data.get('categories',[]),'models':[{'id':m.id,'name':m.name,'active':m.active} for m in s.scalars(select(Master).where(Master.kind=='model'))],'parts_daily':shared,'revision':rev,'items':data['items'],'calendar':days,'report':r,'outbounds':outs,'closing_history':[{'day':c['day'],'at':c['at'],'actor':c['actor']} for c in data['closings'] if c['day']==d]}
 
 def resolve(data,text,allow_inactive=False):

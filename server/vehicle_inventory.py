@@ -37,7 +37,7 @@ def initialize(s):
  s.flush();return start
 
 def source_data(s):
- return {cls.__name__:allrows(s,cls) for cls in [Vehicle,Master,Stay,Outbound,Adjustment,History,Fact,Price,Event,PurchaseRecord]}
+ return {cls.__name__:(list(s.scalars(select(History).where(History.event.in_(['ARCHIVED','DELETED','MOVED','READY','ASSIGNED','ORDER_CANCELLED'])))) if cls is History else allrows(s,cls)) for cls in [Vehicle,Master,Stay,Outbound,Adjustment,History,Fact,Price,Event,PurchaseRecord]}
 def valuation(data,row,d):
  eligible=[p for p in data[Price.__name__] if p.effective_day<=d and p.vehicle_kind==row['kind']]
  def last(scope,key):return max([p for p in eligible if p.scope==scope and p.target_id==key],key=lambda p:(p.effective_day,utc(p.at),p.id),default=None)

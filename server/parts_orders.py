@@ -1,7 +1,7 @@
 """Order plans and atomic inventory postings. Existing snapshots are never rewritten."""
 import copy
 from collections import Counter
-from sqlalchemy import select
+from sqlalchemy import select,func
 from .models import Setting, Master, OptionLine, DeliveryLine, Outbound, Adjustment, Equipment, uid, now
 from .domain import need, today, lines
 
@@ -241,13 +241,25 @@ def post_adjustment(s,u,out,adj):
     write_book(s,rev,data)
 
 def effective_outbounds(s,d):
-    voided=set(s.scalars(select(Adjustment.outbound_id).where(Adjustment.kind=='VOID')))
-    return [o for o in s.scalars(select(Outbound).where(Outbound.day==d)) if o.id not in voided]
+    return list(s.scalars(select(Outbound).where(Outbound.day==d,~select(Adjustment.id).where(Adjustment.outbound_id==Outbound.id,Adjustment.kind=='VOID').exists())))
+
+def month_counts(s,month):
+    from datetime import date
+    first=date.fromisoformat(month+'-01');last=date(first.year+1,1,1) if first.month==12 else date(first.year,first.month+1,1)
+    channel=func.coalesce(Outbound.snapshot['parts_order']['channel'].as_string(),'LEGACY')
+    q=select(Outbound.day,channel,func.count()).where(Outbound.day>=first.isoformat(),Outbound.day<last.isoformat(),~select(Adjustment.id).where(Adjustment.outbound_id==Outbound.id,Adjustment.kind=='VOID').exists()).group_by(Outbound.day,channel)
+    result={}
+    for d,ch,n in s.execute(q):result.setdefault(d,{})[ch]=n
+    return result
+
 
 def daily(s,d):
-    counts=Counter();usage=Counter();vehicles=[];models=Counter()
+    from collections import defaultdict
+    counts=Counter();usage=Counter();vehicles=[];models=Counter();by_outbound=defaultdict(list)
+    # One day-scoped join replaces one lookup per vehicle (no IN parameter limit).
+    for adj in s.scalars(select(Adjustment).join(Outbound,Adjustment.outbound_id==Outbound.id).where(Outbound.day==d)):by_outbound[adj.outbound_id].append(adj)
     for out in s.scalars(select(Outbound).where(Outbound.day==d)):
-        adjustments=list(s.scalars(select(Adjustment).where(Adjustment.outbound_id==out.id)))
+        adjustments=by_outbound[out.id]
         void=any(a.kind=='VOID' for a in adjustments);p=out.snapshot.get('parts_order');channel=p['channel'] if p else 'LEGACY'
         vehicle={'id':out.id,'vin':out.snapshot['vehicle']['vin'],'model':out.snapshot['vehicle']['model'],'channel':channel,'void':void,'parts':[],'linked':bool(p),'adjusted':any(a.kind=='CORRECTION' for a in adjustments)}
         if p:

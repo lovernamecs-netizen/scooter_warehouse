@@ -73,6 +73,8 @@ def backup(db):
       for field in ['path','thumbnail']:
        source=safe(root_path,entry[field])
        if source.is_file():files.append((prefix+field+'/'+source.name,source,None))
+   with closing(sqlite3.connect(snapshot)) as output:
+    if output.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('백업 DB 무결성 오류')
    with zipfile.ZipFile(Path(tmp)/name,'w',zipfile.ZIP_DEFLATED,compresslevel=1) as z:
     for archive,source,expected in [('warehouse.db',snapshot,None),*files]:
      h=hashlib.sha256();size=0
@@ -84,9 +86,13 @@ def backup(db):
      manifest['files'][archive]={'size':size,'sha256':h.hexdigest()}
     z.writestr('manifest.json',json.dumps(manifest,ensure_ascii=False))
    verify(Path(tmp)/name);os.replace(Path(tmp)/name,target)
-  with db.transaction() as s:put(s,'photo_backup_status',{'ok':True,'at':stamp(),'file':str(target),'files':len(manifest['files'])})
-  # Prune only our own verified-format archives, after a successful new backup.
-  prune_verified(dest,cfg['retention'])
+  status={'ok':True,'at':stamp(),'file':str(target),'files':len(manifest['files']),'last_success_at':manifest['created_at']}
+  with db.transaction() as s:put(s,'photo_backup_status',status)
+  # Cleanup failure must not mislabel a verified backup or generate emergency copies.
+  try:prune_verified(dest,cfg['retention'])
+  except Exception:
+   status['cleanup_warning']='백업은 완료됐지만 오래된 백업 정리에 실패했습니다. 경로 권한과 저장 공간을 확인하세요.'
+   with db.transaction() as s:put(s,'photo_backup_status',status)
   return {'file':str(target),'files':len(manifest['files']),'at':manifest['created_at']}
  except Exception as e:
   failure={'ok':False,'at':stamp(),'error':'통합 백업 실패. 사진 누락·저장 공간·경로 권한을 확인하세요.'}
@@ -146,7 +152,7 @@ def scheduler(db,stop):
  retry_after=0
  while not stop.wait(60):
   try:
-   with db.transaction() as s:
+   with db.read() as s:
     cfg=config(s);last=s.get(Setting,'photo_backup_status');last=last.value if last else {}
    if time.monotonic()<retry_after:continue
    if cfg.get('daily') and (not last.get('ok') or last.get('at','')[:10]!=stamp()[:10]):

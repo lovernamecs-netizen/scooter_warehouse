@@ -132,11 +132,17 @@ def report(s,d):
             options[key(l)]+=l['qty']
             if l['origin']=='NEW':new_options[key(l)]+=l['qty']
         for l in o.snapshot['items']:items[key(l)]+=l['qty']
-    sts=rows(s,Stay);hist=rows(s,History)
+    start=end-timedelta(days=1)
+    def count(cls,*conditions):return s.scalar(select(func.count()).select_from(cls).where(*conditions))
+    received=count(Stay,Stay.received_at>=start,Stay.received_at<end,Stay.reason!='VOID')
+    installed=s.scalar(select(func.count()).select_from(select(History.vehicle_id).where(History.event=='UBIS_INSTALLED',History.at>=start,History.at<end).distinct().subquery()))
+    placed=count(Stay,Stay.first_placed_at>=start,Stay.first_placed_at<end)
+    current_stock=count(Stay,Stay.closed_at.is_(None))
+    end_stock=count(Stay,Stay.received_at<end,(Stay.closed_at.is_(None))|(Stay.closed_at>=end))
     nextday=(date.fromisoformat(d)+timedelta(days=1)).isoformat()
     nxt=list(s.scalars(select(Assignment).where(Assignment.status=='ACTIVE',Assignment.scheduled==nextday)))
-    adjustments=[{'id':a.id,'outbound_id':a.outbound_id,'kind':a.kind,'reason':a.reason,'at':iso(a.at),'detail':a.detail} for a in rows(s,Adjustment) if day(a.at)==d]
-    result={'day':d,'received':sum(day(x.received_at)==d and x.reason!='VOID' for x in sts),'ubis':len({h.vehicle_id for h in hist if h.event=='UBIS_INSTALLED' and day(h.at)==d}),'placed':sum(x.first_placed_at is not None and day(x.first_placed_at)==d for x in sts),'dispatched':len(outs),'current_stock':sum(x.closed_at is None for x in sts),'end_stock':sum(x.received_at.replace(tzinfo=timezone.utc)<end and (x.closed_at is None or x.closed_at.replace(tzinfo=timezone.utc)>=end) for x in sts),'models':dict(models),'options':dict(options),'new_options':dict(new_options),'items':dict(items),'next_day':nextday,'next_total':len(nxt),'next_completed':sum(a.work=='COMPLETED' for a in nxt),'adjustments':adjustments,'outbounds':[{'id':o.id,'at':iso(o.at),'vin':o.snapshot['vehicle']['vin'],'model':o.snapshot['vehicle']['model']} for o in outs]}
+    adjustments=[{'id':a.id,'outbound_id':a.outbound_id,'kind':a.kind,'reason':a.reason,'at':iso(a.at),'detail':a.detail} for a in s.scalars(select(Adjustment).where(Adjustment.at>=start,Adjustment.at<end))]
+    result={'day':d,'received':received,'ubis':installed,'placed':placed,'dispatched':len(outs),'current_stock':current_stock,'end_stock':end_stock,'models':dict(models),'options':dict(options),'new_options':dict(new_options),'items':dict(items),'next_day':nextday,'next_total':len(nxt),'next_completed':sum(a.work=='COMPLETED' for a in nxt),'adjustments':adjustments,'outbounds':[{'id':o.id,'at':iso(o.at),'vin':o.snapshot['vehicle']['vin'],'model':o.snapshot['vehicle']['model']} for o in outs]}
     from .parts_orders import daily
     result['parts_daily']=daily(s,d)
     from .business_report import report as business_report
