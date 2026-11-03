@@ -9,3 +9,6 @@ cryptography==50.0.2
 Pillow>=11.0,<12
 pillow-heif>=0.20,<1
 PyMuPDF>=1.24,<2
+solapi
+keyring>=25,<26
+xlrd>=2,<3
