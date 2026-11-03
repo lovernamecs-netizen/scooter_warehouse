@@ -4,6 +4,7 @@ let documents = [];
 let contacts = {};
 let conflictPlates = [];
 const cleanPlate = value => String(value || '').normalize('NFKC').replace(/[^0-9가-힣]/g, '');
+const isPlate = plate => /^(?:\d{1,3}[가-힣]\d{4,5}|(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[가-힣]{3,6}\d{4,5})$/.test(plate);
 const cleanPhone = value => String(value || '').replace(/\D/g, '');
 const isPhone = value => /^01[016789]\d{7,8}$/.test(value);
 
@@ -277,7 +278,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
     if (action === 'send') {
       await sender?.sendOne(index);
     } else if (action === 'confirm') {
-      if (!doc?.plate) return toast('차량번호를 입력해 주세요.');
+      if (!doc?.plate || !isPlate(doc.plate)) return toast('국내 차량번호 형식이 올바른지 원본을 확인해 주세요.');
       doc.review_required = false;
       doc.reason = '사용자가 원본 확인을 완료했습니다.';
       refresh();
