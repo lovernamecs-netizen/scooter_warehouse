@@ -22,7 +22,7 @@ REGION_ALT = "|".join(map(re.escape, REGIONS))
 # 옛 지역식(경기 수원 너 4265), 신형(123가4567), 붙여 쓴 옛 지역식을 모두 처리.
 OLD_SPACED = re.compile(r"(?<![가-힣])(?:" + REGION_ALT + r")\s+[가-힣]{2,5}\s+[가-힣]\s*\d{4,5}(?!\d)")
 OLD_JOINED = re.compile(r"(?<![가-힣])(?:" + REGION_ALT + r")[가-힣]{2,5}[가-힣]\d{4,5}(?!\d)")
-NEW_PLATE = re.compile(r"(?<![0-9가-힣])\d{1,3}\s*[가-힣]\s*\d{4,5}(?!\d)")
+NEW_PLATE = re.compile(r"(?<![0-9가-힣])\d{1,3}\s*[가-힣]\s*\d(?:[ \t]?\d){3,4}(?!\d)")
 PLATE_LABEL = re.compile(
     r"(?:차량\s*번호|차량\s*등록\s*번호|이륜(?:자동차|차)?\s*(?:등록)?\s*번호|등록\s*번호)\s*[:：\-]?\s*",
     flags=re.IGNORECASE,
