@@ -6,13 +6,14 @@ import csv
 import io
 import re
 import unicodedata
-from dataclasses import dataclass
 
 MASK_RECT = (330, 400, 585, 435)
 MAX_PDF_BYTES = 15 * 1024 * 1024
 MAX_CONTACT_BYTES = 5 * 1024 * 1024
 MAX_PAGES = 60
 MAX_JPEG_BYTES = 199_000
+MAX_MMS_WIDTH = 1500
+MAX_MMS_HEIGHT = 1440
 
 REGIONS = (
     "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
@@ -75,7 +76,11 @@ def extract_plate(text: str) -> dict:
 def _encode_jpeg(image, limit: int) -> tuple[bytes, bool, int, int]:
     """컬러(RGB), 가로세로 비율·전체 여백 유지. 199KiB 실패 시 발송금지 표시."""
     from PIL import Image
-    # 원본 전체 페이지를 같은 비율로만 줄이며 자르거나 회색조로 변환하지 않습니다.
+    # RGB 유지. MMS 업로드 규격 1500x1440 내로 비율만 축소하며, 자르지 않습니다.
+    if image.width > MAX_MMS_WIDTH or image.height > MAX_MMS_HEIGHT:
+        baseline = min(MAX_MMS_WIDTH / image.width, MAX_MMS_HEIGHT / image.height)
+        image = image.resize((max(1, round(image.width * baseline)),
+                              max(1, round(image.height * baseline))), Image.Resampling.LANCZOS)
     for scale in (1.0, .90, .80, .70, .60):
         candidate = image if scale == 1.0 else image.resize(
             (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
@@ -194,6 +199,18 @@ def parse_contacts(filename: str, data: bytes) -> dict:
         if not headers:
             raise InsuranceDocumentError("CSV 파일에 열 제목이 없습니다.")
         return _parse_table(headers, table)
+    if filename.lower().endswith(".xls"):
+        try:
+            import xlrd
+            book = xlrd.open_workbook(file_contents=data)
+            sheet = book.sheet_by_index(0)
+            if sheet.nrows < 1:
+                raise InsuranceDocumentError("엑셀 첫 번째 시트에 열 제목이 없습니다.")
+            return _parse_table(sheet.row_values(0), (sheet.row_values(i) for i in range(1, sheet.nrows)))
+        except InsuranceDocumentError:
+            raise
+        except Exception as exc:
+            raise InsuranceDocumentError("구형 XLS 연락처 파일을 읽지 못했습니다.") from exc
     if filename.lower().endswith(".xlsx"):
         from openpyxl import load_workbook
         try:
@@ -209,4 +226,4 @@ def parse_contacts(filename: str, data: bytes) -> dict:
             return _parse_table(headers, lines)
         finally:
             workbook.close()
-    raise InsuranceDocumentError("연락처 파일은 CSV 또는 XLSX 형식만 지원합니다.")
+    raise InsuranceDocumentError("연락처 파일은 CSV, XLS, XLSX 형식만 지원합니다.")
