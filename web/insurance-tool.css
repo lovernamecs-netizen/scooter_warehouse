@@ -35,6 +35,10 @@ dialog.insurance-preview{width:min(1000px,98vw);max-height:94dvh;overflow:auto;b
 .insurance-card .panel-head{align-items:flex-start}
 .insurance-actions{padding:8px 0;border-bottom:1px solid #e9eef0}
 .insurance-table{min-width:1050px}
+.insurance-table td:first-child{min-width:48px;width:48px;text-align:center}
+.insurance-table td:nth-child(2){min-width:155px}
+.insurance-table td:nth-child(3){min-width:195px}
+.insurance-table input[type=checkbox]{width:18px;height:18px;min-width:18px;accent-color:var(--teal)}
 .insurance-table td:last-child{min-width:180px;max-width:280px}
 .insurance-table td:last-child .primary{background:var(--teal);border-color:var(--teal);color:#fff}
 .insurance-table td:last-child .primary:disabled{opacity:.45}
