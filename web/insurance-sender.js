@@ -13,7 +13,7 @@ function encodeHumanError(esc, error) {
     '</pre></details></div>';
 }
 
-export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBytes, getPhone, refreshRows, role}) {
+export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBytes, getPhone, refreshRows, role, getSelected}) {
   if (!target) return {sendOne: async () => {}};
   target.innerHTML =
     '<section class="panel insurance-card insurance-send-card">' +
@@ -25,6 +25,7 @@ export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBy
           '<label for="insurance-message-template">MMS 전송 문구 편집</label>' +
           '<textarea id="insurance-message-template" rows="10" placeholder="{차량번호}를 입력하면 차량번호로 치환합니다."></textarea>' +
           '<div class="insurance-send-actions"><button type="button" data-mms="save-template">문구 저장</button>' +
+          '<button type="button" data-mms="send-selected">선택 항목 MMS 발송</button>' +
           '<button type="button" data-mms="send-all" class="primary">전체 목록 일괄 MMS 발송</button></div>' +
           '<small>엑셀 연락처와 이미지가 준비된 건만 발송하며, 이미 접수된 건은 재발송하지 않습니다.</small>' +
           '<p id="insurance-send-progress" role="status"></p>' +
@@ -135,19 +136,21 @@ export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBy
     refreshRows();
   }
 
-  async function sendAll() {
+  async function sendAll(selectedOnly = false) {
     if (!settingsLoaded || !providerConfigured) return toast('CoolSMS 계정 설정이 필요합니다.');
-    const eligible = documents.map((doc, index) => ({doc, index})).filter(({doc}) =>
+    const requested = selectedOnly ? new Set(getSelected()) : null;
+    const eligible = documents.map((doc, index) => ({doc, index})).filter(({doc,index}) =>
+      (!requested || requested.has(index)) &&
       doc.within_limit && doc.plate && !doc.review_required &&
       /^01[016789]\d{7,8}$/.test(getPhone(doc)) &&
       !['accepted', 'unknown', 'sending'].includes(doc.send_status)
     );
     if (!eligible.length) return toast('발송 가능한 항목이 없습니다. 차량번호·연락처·이미지와 기존 발송 상태를 확인하세요.');
-    if (!window.confirm('총 ' + eligible.length + '건을 CoolSMS로 실제 발송하시겠습니까?\n' +
+    if (!window.confirm((selectedOnly ? '선택 항목 ' : '전체 목록 ') + '총 ' + eligible.length + '건을 CoolSMS로 실제 발송하시겠습니까?\n' +
       '유료 발송이며 전송 중에는 창을 닫지 마세요.')) return;
     let accepted = 0, failed = 0, unknown = 0;
-    const btn = el('[data-mms="send-all"]');
-    btn.disabled = true;
+    const buttons = [...target.querySelectorAll('[data-mms="send-all"],[data-mms="send-selected"]')];
+    buttons.forEach(button => button.disabled = true);
     try {
       for (let i = 0; i < eligible.length; i++) {
         setProgress((i + 1) + ' / ' + eligible.length + '건 발송 처리 중');
@@ -158,7 +161,7 @@ export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBy
         else failed++;
       }
     } finally {
-      btn.disabled = false;
+      buttons.forEach(button => button.disabled = false);
       setProgress('일괄 발송 요청 종료 · 접수 ' + accepted + '건 / 실패 ' + failed +
         '건 / 접수 확인 필요 ' + unknown + '건');
       feedback('<div class="notice"><strong>일괄 MMS 처리 결과</strong><p>접수 ' + accepted +
@@ -173,6 +176,8 @@ export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBy
     const action = btn.dataset.mms;
     if (action === 'send-all') {
       await sendAll();
+    } else if (action === 'send-selected') {
+      await sendAll(true);
     } else if (action === 'save-template') {
       const text = el('#insurance-message-template').value.trim();
       try {
