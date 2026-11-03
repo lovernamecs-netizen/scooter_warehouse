@@ -197,6 +197,47 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
         }
       }
       el('#insurance-progress').textContent = 'PDF 변환 작업 종료 · 원본과 결과를 확인해 주세요.';
+    } else if (kind === 'jpg') {
+      const files = Array.from(target.files || []).filter(file => /\.jpe?g$/i.test(file.name));
+      target.value = '';
+      let loaded = 0;
+      for (const file of files) {
+        if (file.size > 15 * 1024 * 1024) {
+          toast(file.name + ' : JPG가 15MB를 초과했습니다.');
+          continue;
+        }
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          if (bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216 ||
+              bytes[bytes.length - 2] !== 255 || bytes[bytes.length - 1] !== 217)
+            throw Error('JPG 파일 구조가 올바르지 않습니다.');
+          const bitmap = await createImageBitmap(file);
+          const width = bitmap.width, height = bitmap.height;
+          bitmap.close();
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(Error('파일을 읽을 수 없습니다.'));
+            reader.readAsDataURL(file);
+          });
+          const originalName = file.name.replace(/\.jpe?g$/i, '').replace(/_\d+$/, '');
+          const plate = cleanPlate(originalName);
+          const within = file.size <= 199000 && width <= 1500 && height <= 1440;
+          documents.push({
+            source: file.name, page: 1, plate, candidates: plate ? [plate] : [],
+            review_required: true, reason: '가져온 JPG 파일명입니다. 원본과 차량번호를 확인해 주세요.',
+            within_limit: within, width, height, size_bytes: file.size,
+            jpeg_base64: String(dataUrl).split(',')[1], phone: contacts[plate] || '',
+            manualPhone: false,
+            warning: within ? '' : 'JPG 용량(199KB) 또는 해상도(1500×1440) 제한을 초과하여 MMS 발송이 보류됩니다.',
+          });
+          loaded++;
+        } catch (error) {
+          toast(file.name + ': ' + error.message);
+        }
+      }
+      refresh();
+      el('#insurance-progress').textContent = 'JPG ' + loaded + '개를 불러왔습니다. 원본 확인 후 발송해 주세요.';
     } else if (kind === 'contacts') {
       const file = target.files?.[0];
       target.value = '';
