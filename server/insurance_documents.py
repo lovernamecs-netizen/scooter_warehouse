@@ -12,7 +12,7 @@ MASK_RECT = (330, 400, 585, 435)
 MAX_PDF_BYTES = 15 * 1024 * 1024
 MAX_CONTACT_BYTES = 5 * 1024 * 1024
 MAX_PAGES = 60
-MAX_JPEG_BYTES = 199 * 1024
+MAX_JPEG_BYTES = 199_000
 
 REGIONS = (
     "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
