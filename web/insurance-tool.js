@@ -167,8 +167,11 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
     if (!documents.length) rows.innerHTML = '<tr><td colspan="6"><div class="empty">PDF를 선택하면 여기에 페이지별 결과가 표시됩니다.</div></td></tr>';
     summary();
   };
-  const fileName = (doc, index) => (doc.plate || ('확인필요_' + (index + 1))) + '_' +
-    String(index + 1).padStart(3, '0') + '.jpg';
+  const fileName = (doc, index) => {
+    const base = doc.plate || ('미인식_p' + doc.page);
+    const prior = documents.slice(0, index).filter(d => (d.plate || ('미인식_p' + d.page)) === base).length;
+    return base + (prior ? '_' + prior : '') + '.jpg';
+  };
 
   container.addEventListener('change', async event => {
     const target = event.target;
