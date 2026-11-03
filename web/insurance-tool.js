@@ -107,7 +107,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
       '<p class="notice">문서의 원본 색상·여백·배치를 그대로 유지하고 지정된 흰색 영역만 처리합니다. JPG는 199KB 이하에서만 발송하며, 수신자·차량번호 확인 후 CoolSMS로 전송합니다.</p>' +
       '<p id="insurance-progress" role="status" class="muted"></p>' +
       '<div id="insurance-summary" class="insurance-summary"></div>' +
-      '<div class="table-wrap"><table class="insurance-table"><thead><tr><th>보험증권</th><th>차량번호 · 원본 확인</th><th>연락처</th><th>용량 · 상태</th><th>미리보기 / 저장</th><th>MMS 개별 발송 · 결과</th></tr></thead><tbody id="insurance-rows"></tbody></table></div>' +
+      '<div class="table-wrap"><table class="insurance-table"><thead><tr><th><input type="checkbox" data-insurance-select-all aria-label="전체 항목 선택"></th><th>보험증권</th><th>차량번호 · 원본 확인</th><th>연락처</th><th>용량 · 상태</th><th>미리보기 / 저장</th><th>MMS 개별 발송 · 결과</th></tr></thead><tbody id="insurance-rows"></tbody></table></div>' +
     '</section>' +
     '<div id="insurance-send-mount"></div>' +
     '<section class="panel insurance-card">' +
@@ -120,6 +120,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
     '</section>';
   const el = selector => container.querySelector(selector);
   let sender = null;
+  const selected = new Set();
   const summary = () => {
     const ready = documents.filter(d => d.within_limit && d.plate && !d.review_required).length;
     const matched = documents.filter(d => isPhone(d.phone || contacts[d.plate] || '')).length;
@@ -145,6 +146,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
         (!doc.plate || doc.review_required) ? '차량번호 확인 필요' :
         !isPhone(phone) ? '연락처 미지정' : '이미지·연락처 확인';
       tr.innerHTML =
+        '<td><input type="checkbox" data-insurance-select="' + index + '" ' + (selected.has(index) ? 'checked' : '') + ' aria-label="발송 항목 선택"></td>' +
         '<td><strong>' + esc(doc.source) + '</strong><br><small>' + doc.page + '페이지</small></td>' +
         '<td><input class="insurance-plate" data-insurance-plate="' + index + '" aria-label="차량번호 수정" value="' + esc(doc.plate) + '" ' +
         (['accepted','unknown','sending'].includes(doc.send_status) ? 'disabled' : '') + '>' +
@@ -164,7 +166,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
         '\n원문: ' + (doc.send_error.technical?.detail || '확인 불가')) + '</pre></details>' : '') + '</td>';
       rows.appendChild(tr);
     });
-    if (!documents.length) rows.innerHTML = '<tr><td colspan="6"><div class="empty">PDF를 선택하면 여기에 페이지별 결과가 표시됩니다.</div></td></tr>';
+    if (!documents.length) rows.innerHTML = '<tr><td colspan="7"><div class="empty">PDF를 선택하면 여기에 페이지별 결과가 표시됩니다.</div></td></tr>';
     summary();
   };
   const fileName = (doc, index) => {
@@ -176,6 +178,17 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
   container.addEventListener('change', async event => {
     const target = event.target;
     const kind = target.dataset.insurance;
+    if (target.dataset.insuranceSelect !== undefined) {
+      const index = Number(target.dataset.insuranceSelect);
+      if (target.checked) selected.add(index); else selected.delete(index);
+      return;
+    }
+    if (target.dataset.insuranceSelectAll !== undefined) {
+      selected.clear();
+      if (target.checked) documents.forEach((doc, index) => selected.add(index));
+      refresh();
+      return;
+    }
     if (kind === 'pdf') {
       const files = Array.from(target.files || []);
       target.value = '';
@@ -310,6 +323,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
     } else if (action === 'clear') {
       if (!window.confirm('보험증권과 연락처 임시 목록을 초기화하시겠습니까?')) return;
       clearInsuranceTool();
+      selected.clear();
       refresh();
       el('#insurance-progress').textContent = '목록을 초기화했습니다.';
       el('#insurance-error-result').textContent = '';
@@ -343,6 +357,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
     }
   });
   sender = mountInsuranceSender(el('#insurance-send-mount'), {api, toast, esc, documents, jpegBytes,
-    getPhone: doc => doc.phone || contacts[doc.plate] || '', refreshRows: refresh, role});
+    getPhone: doc => doc.phone || contacts[doc.plate] || '', refreshRows: refresh, role,
+    getSelected: () => [...selected]});
   refresh();
 }
