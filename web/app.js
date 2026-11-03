@@ -56,7 +56,7 @@ async function renderPage(){rememberMapView();const mapWindow=page==='map'&&$('.
  else if(cur==='outbound'){target.innerHTML=head('출고이력','확정 당시 차량과 품목을 보존합니다.');const data=await api('/outbound');if(page!==cur)return;window.outData=data;target.innerHTML=outPage(data)}
  else if(cur==='parts'){target.innerHTML=head('재고 마감','불러오는 중…');await renderParts(target,{api,esc,modal,toast,err,user:S.user,isCurrent:()=>page==='parts',setBusy:v=>formSafety.setBusy(v)},S.today);}
  else if(cur==='settings')target.innerHTML=settingsPage();
- else if(cur==='tools'){target.innerHTML=head('관리·도구','보험증권 PDF 처리와 발송 오류 확인을 한곳에서 관리합니다.')+'<div id="insurance-tool"></div>';if(['admin','worker'].includes(S.user.role))renderInsuranceTool(target.querySelector('#insurance-tool'),{api,toast,esc,role:S.user.role});else target.innerHTML+='<p class="notice warn">업무 도구 접근 권한이 없습니다.</p>';}
+ else if(cur==='tools'){target.innerHTML=head('관리·도구','보험증권 PDF 처리와 발송 오류 확인을 한곳에서 관리합니다.',button('샘플 UI 미리보기 새 창','insurance-preview'))+'<div id="insurance-tool"></div>';if(['admin','worker'].includes(S.user.role))renderInsuranceTool(target.querySelector('#insurance-tool'),{api,toast,esc,role:S.user.role});else target.innerHTML+='<p class="notice warn">업무 도구 접근 권한이 없습니다.</p>';}
  else if(cur==='receive'){target.innerHTML=head('차량 입고','차종·색상·제조년월을 등록하세요. VIN은 나중에 입력할 수 있습니다.',button('신규 입고','receipt','','primary'))+`<section class="panel"><h2>오늘 입고한 현재 재고</h2>${vehicleTable(operations(S.vehicles.filter(v=>v.stay_id),S.today).received)}</section>`}
  bindPage();
  }catch(e){target.innerHTML+=`<div class="notice warn">${esc(e.message)}${button('다시 연결','refresh')}</div>`}}
@@ -146,6 +146,7 @@ case 'nav':if($('#modal').open&&!formSafety.close())break;page=d.page;opsFilter=
 case 'menu':modal('메뉴',`<div class="count-grid">${nav.filter(([id])=>id!=='tools'||['admin','worker'].includes(S.user.role)).map(([id,i,l])=>button(l,'menu-nav',`data-page="${id}"`)).join('')}</div>`,button('로그아웃','logout'));break;
 case 'menu-nav':$('#modal').close();await handle('nav',b);break;
 case 'refresh':await refresh();render();toast('최신 정보로 갱신했습니다.');break;
+case 'insurance-preview':window.open('/insurance-preview.html','insurancePreview','popup=yes,width=1340,height=860,resizable=yes,scrollbars=yes');break;
 case 'photo-storage':await photoStorage({api,modal,esc,toast});break;
 case 'logout':clearInsuranceTool();window.WarehouseNative?.setUploadSession?.('','');try{await api('/logout',{method:'POST'})}catch{}token='';S=null;sessionStorage.clear();localStorage.removeItem('warehouseCache');$('#modal').close();render();break;
 case 'receipt':if(page==='used')await usedStock.open();else receipt();break;
