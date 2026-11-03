@@ -241,6 +241,88 @@ def create_app(database=None):
     @app.get('/api/parts/export/{day}')
     def parts_export(day:str,request:Request):
         with db.transaction() as s:return parts.export(s,user(s,request),day)
+    # 보험증권 관리 도구: 원본/가림/변환 모두 요청 메모리 내에서 처리.
+    # 문자 발송은 서비스 선정 전까지 비활성화. 발송 실패 사유 해석만 제공.
+    @app.post('/api/insurance/convert')
+    async def insurance_convert(request:Request,file:UploadFile=File(...)):
+        from .insurance_documents import convert_pdf,InsuranceDocumentError,MAX_PDF_BYTES
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'보험증권 처리 권한이 없습니다.',403)
+        if not (file.filename or '').lower().endswith('.pdf'):
+            raise HTTPException(422,'PDF 파일을 선택해 주세요.')
+        raw=await file.read(MAX_PDF_BYTES+1)
+        try:
+            from starlette.concurrency import run_in_threadpool
+            return await run_in_threadpool(convert_pdf,raw)
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(422,'PDF 처리에 실패했습니다. 문서 형식과 페이지 크기를 확인하세요.') from exc
+        finally:
+            await file.close()
+
+    @app.post('/api/insurance/contacts')
+    async def insurance_contacts(request:Request,file:UploadFile=File(...)):
+        from .insurance_documents import parse_contacts,InsuranceDocumentError,MAX_CONTACT_BYTES
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'연락처 처리 권한이 없습니다.',403)
+        raw=await file.read(MAX_CONTACT_BYTES+1)
+        try:
+            return parse_contacts(file.filename or '',raw)
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(422,'연락처 파일 형식을 확인해 주세요.') from exc
+        finally:
+            await file.close()
+
+    @app.get('/api/insurance/mms/settings')
+    def insurance_mms_settings(request:Request):
+        from .insurance_settings import public_settings
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'보험증권 관리 권한이 없습니다.',403)
+        return public_settings()
+
+    @app.put('/api/insurance/mms/settings')
+    def insurance_mms_settings_save(p:dict,request:Request):
+        from .insurance_settings import save_account
+        from .insurance_documents import InsuranceDocumentError
+        with db.transaction() as s:
+            admin(user(s,request))
+        try:
+            return save_account(p)
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+
+    @app.put('/api/insurance/mms/template')
+    def insurance_mms_template_save(p:dict,request:Request):
+        from .insurance_settings import save_template
+        from .insurance_documents import InsuranceDocumentError
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'MMS 문구 수정 권한이 없습니다.',403)
+        try:
+            return save_template(p.get('msg_template',''))
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+
+    @app.post('/api/insurance/mms/send')
+    def insurance_mms_send(p:dict,request:Request):
+        from .insurance_coolsms import send_one
+        from .insurance_documents import InsuranceDocumentError
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'MMS 발송 권한이 없습니다.',403)
+        try:
+            return send_one(p)
+        except InsuranceDocumentError as exc:
+            raise HTTPException(422,str(exc)) from exc
+
+    @app.post('/api/insurance/mms/explain')
+    def insurance_mms_explain(p:dict,request:Request):
+        from .insurance_mms import explain_failure
+        with db.transaction() as s:
+            need(user(s,request).role in ('admin','worker'),'발송 오류 확인 권한이 없습니다.',403)
+        return explain_failure(p.get('code',''),p.get('detail',''))
+
     root=Path(__file__).resolve().parent.parent/'web'
     @app.get('/')
     def index():return FileResponse(root/'index.html')
