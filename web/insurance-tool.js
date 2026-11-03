@@ -168,7 +168,8 @@ export function renderInsuranceTool(container, {api, toast, esc}) {
           form.append('file', file);
           const result = await api('/insurance/convert', {method: 'POST', body: form});
           for (const page of result.pages) {
-            documents.push({...page, source: file.name, phone: '', manualPhone: false});
+            documents.push({...page, source: file.name, phone: '', manualPhone: false, review_required: true,
+              reason: page.reason || '자동 추출한 차량번호입니다. 원본을 대조하고 확인 완료를 눌러 주세요.'});
           }
           refresh();
         } catch (error) {
