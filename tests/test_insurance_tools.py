@@ -77,7 +77,7 @@ def test_mms_explanation_is_human_readable():
 
 
 def test_mms_detail_redacts_credentials():
-    result = explain_failure("other", "authorization: secret-value")
+    result = explain_failure("other", "authorization: Bearer secret-value")
     assert "secret-value" not in result["technical"]["detail"]
 
 
