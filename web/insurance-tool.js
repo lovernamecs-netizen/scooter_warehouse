@@ -91,8 +91,13 @@ function zipFile(items) {
   return new Blob([...output, ...central, end], { type: 'application/zip' });
 }
 
-export function renderInsuranceTool(container, {api, toast, esc, role}) {
+export function renderInsuranceTool(container, {api, toast, esc, role, previewData = null}) {
   if (!container) return;
+  if (previewData) {
+    documents = (previewData.documents || []).map(doc => ({...doc}));
+    contacts = {...(previewData.contacts || {})};
+    conflictPlates = [...(previewData.conflictPlates || [])];
+  }
   container.innerHTML =
     '<section class="panel insurance-card">' +
       '<div class="panel-head"><div><h2>보험증권 · 이미지 준비</h2><p class="muted">PDF 원본은 수정하지 않습니다. 지정된 흰색 가림 영역만 적용하고 RGB 컬러로 JPG를 생성합니다.</p></div></div>' +
