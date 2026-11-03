@@ -168,7 +168,7 @@ export function renderInsuranceTool(container, {api, toast, esc}) {
           form.append('file', file);
           const result = await api('/insurance/convert', {method: 'POST', body: form});
           for (const page of result.pages) {
-            documents.push({...page, source: file.name, phone: '', verified: !page.review_required});
+            documents.push({...page, source: file.name, phone: '', manualPhone: false});
           }
           refresh();
         } catch (error) {
@@ -187,7 +187,7 @@ export function renderInsuranceTool(container, {api, toast, esc}) {
         const result = await api('/insurance/contacts', {method: 'POST', body: form});
         contacts = result.contacts;
         conflictPlates = result.conflicts;
-        for (const doc of documents) if (!doc.phone) doc.phone = contacts[doc.plate] || '';
+        for (const doc of documents) if (!doc.manualPhone) doc.phone = contacts[doc.plate] || '';
         refresh();
         toast('연락처 ' + result.count + '건을 불러왔습니다. 충돌 ' + result.conflicts.length + '건은 자동 매칭하지 않습니다.');
       } catch (error) {
@@ -196,13 +196,14 @@ export function renderInsuranceTool(container, {api, toast, esc}) {
     } else if (target.dataset.insurancePlate !== undefined) {
       const doc = documents[Number(target.dataset.insurancePlate)];
       doc.plate = cleanPlate(target.value);
-      doc.phone = contacts[doc.plate] || '';
+      if (!doc.manualPhone) doc.phone = contacts[doc.plate] || '';
       doc.review_required = true; // 수동 변경 후 원본 재확인 필수
       doc.reason = '직접 수정한 차량번호입니다. 보험증권 원본과 확인하세요.';
       refresh();
     } else if (target.dataset.insurancePhone !== undefined) {
       const doc = documents[Number(target.dataset.insurancePhone)];
       doc.phone = cleanPhone(target.value);
+      doc.manualPhone = !!doc.phone;
       refresh();
     }
   });
