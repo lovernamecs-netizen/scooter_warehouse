@@ -1,4 +1,5 @@
-// 보험증권 업무 도구. 메시지 발송을 수행하지 않으며 브라우저 세션 메모리만 사용합니다.
+// 보험증권 변환·연락처·CoolSMS 발송 통합 UI.
+import {mountInsuranceSender} from './insurance-sender.js';
 let documents = [];
 let contacts = {};
 let conflictPlates = [];
@@ -89,25 +90,28 @@ function zipFile(items) {
   return new Blob([...output, ...central, end], { type: 'application/zip' });
 }
 
-export function renderInsuranceTool(container, {api, toast, esc}) {
+export function renderInsuranceTool(container, {api, toast, esc, role}) {
   if (!container) return;
   container.innerHTML =
     '<section class="panel insurance-card">' +
       '<div class="panel-head"><div><h2>보험증권 · 이미지 준비</h2><p class="muted">PDF 원본은 수정하지 않습니다. 지정된 흰색 가림 영역만 적용하고 RGB 컬러로 JPG를 생성합니다.</p></div></div>' +
       '<div class="insurance-actions">' +
-        '<label class="insurance-upload">보험증권 PDF 선택 (여러 개 가능)<input data-insurance="pdf" type="file" accept=".pdf,application/pdf" multiple></label>' +
-        '<label class="insurance-upload secondary">고객 연락처 CSV/XLSX<input data-insurance="contacts" type="file" accept=".csv,.xlsx"></label>' +
+        '<label class="insurance-upload">보험증권 PDF 선택 (다중)<input data-insurance="pdf" type="file" accept=".pdf,application/pdf" multiple></label>' +
+        '<label class="insurance-upload secondary">JPG 폴더 선택<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" webkitdirectory multiple></label>' +
+        '<label class="insurance-upload secondary">JPG 파일 선택<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" multiple></label>' +
+        '<label class="insurance-upload secondary">거래처 연락처 CSV/XLS/XLSX<input data-insurance="contacts" type="file" accept=".csv,.xls,.xlsx"></label>' +
         '<button type="button" data-insurance="zip" class="primary">검증된 JPG 일괄 ZIP</button>' +
         '<button type="button" data-insurance="clear">목록 초기화</button>' +
       '</div>' +
-      '<p class="notice">기존 PDF 레이아웃·여백·색상 유지. JPG는 최대 199KB를 목표로 하며, 한도 초과 파일은 발송용으로 승인하지 않습니다. MMS 발송 기능은 아직 연결하지 않았습니다.</p>' +
+      '<p class="notice">문서의 원본 색상·여백·배치를 그대로 유지하고 지정된 흰색 영역만 처리합니다. JPG는 199KB 이하에서만 발송하며, 수신자·차량번호 확인 후 CoolSMS로 전송합니다.</p>' +
       '<p id="insurance-progress" role="status" class="muted"></p>' +
       '<div id="insurance-summary" class="insurance-summary"></div>' +
-      '<div class="table-wrap"><table class="insurance-table"><thead><tr><th>보험증권</th><th>차량번호 · 원본 확인</th><th>연락처</th><th>용량 · 상태</th><th>미리보기 / 저장</th></tr></thead><tbody id="insurance-rows"></tbody></table></div>' +
+      '<div class="table-wrap"><table class="insurance-table"><thead><tr><th>보험증권</th><th>차량번호 · 원본 확인</th><th>연락처</th><th>용량 · 상태</th><th>미리보기 / 저장</th><th>MMS 개별 발송 · 결과</th></tr></thead><tbody id="insurance-rows"></tbody></table></div>' +
     '</section>' +
+    '<div id="insurance-send-mount"></div>' +
     '<section class="panel insurance-card">' +
       '<h2>MMS 발송 실패 사유 확인</h2>' +
-      '<p class="muted">발송 서비스 변경을 결정하기 전에는 문자를 전송하지 않습니다. 기존 CoolSMS의 실패 코드나 오류 문구를 입력하면 쉬운 설명으로 바꿔 볼 수 있습니다.</p>' +
+      '<p class="muted">CoolSMS에서 실패했을 때 오류 원인과 필요한 조치를 자연어로 안내합니다. 표의 발송 결과에서도 상세 코드를 펼쳐 볼 수 있습니다.</p>' +
       '<div class="insurance-error-fields"><div><label>오류 코드</label><input id="insurance-error-code" placeholder="예: 1030" maxlength="50"></div>' +
       '<div><label>오류 내용</label><input id="insurance-error-detail" placeholder="예: 잔액이 부족합니다." maxlength="250"></div>' +
       '<button type="button" data-insurance="diagnose">오류 설명 확인</button></div>' +
