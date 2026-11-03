@@ -155,7 +155,9 @@ def send_one(data: dict, provider=None) -> dict:
         detail = str(getattr(exc, "msg", "") or exc)
         human = explain_failure(code, detail)
         is_config = isinstance(exc, InsuranceDocumentError)
-        result = {**human, "state": "failed" if is_config else "unknown", "group_id": ""}
+        uncertain = any(word in detail.lower() for word in ("timeout", "timed out", "connection", "network", "시간 초과", "연결"))
+        definite_failure = is_config or (bool(code) and not uncertain)
+        result = {**human, "state": "failed" if definite_failure else "unknown", "group_id": ""}
         if not is_config and ("timeout" in detail.lower() or "connection" in detail.lower()):
             result["title"] = "발송 접수 여부를 확인하지 못했습니다."
             result["action"] = "중복 발송을 피하기 위해 CoolSMS 발송 내역을 먼저 확인하세요."
