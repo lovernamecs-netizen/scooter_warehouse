@@ -41,6 +41,7 @@ jobs:
           node --input-type=module --check < web/app.js
           node --input-type=module --check < web/insurance-tool.js
           node --input-type=module --check < web/insurance-sender.js
+          node --input-type=module --check < web/insurance-preview.js
   android:
     runs-on: ubuntu-latest
     steps:
