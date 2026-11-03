@@ -2,7 +2,7 @@
 let documents = [];
 let contacts = {};
 let conflictPlates = [];
-const cleanPlate = value => String(value || '').normalize('NFKC').replace(/[\s\-·・]/g, '');
+const cleanPlate = value => String(value || '').normalize('NFKC').replace(/[^0-9가-힣]/g, '');
 const cleanPhone = value => String(value || '').replace(/\D/g, '');
 const isPhone = value => /^01[016789]\d{7,8}$/.test(value);
 
