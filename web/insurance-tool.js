@@ -118,13 +118,16 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
       '<div id="insurance-error-result" aria-live="polite"></div>' +
     '</section>';
   const el = selector => container.querySelector(selector);
+  let sender = null;
   const summary = () => {
     const ready = documents.filter(d => d.within_limit && d.plate && !d.review_required).length;
-    const matched = documents.filter(d => isPhone(d.phone || contacts[d.plate])).length;
+    const matched = documents.filter(d => isPhone(d.phone || contacts[d.plate] || '')).length;
+    const accepted = documents.filter(d => d.send_status === 'accepted').length;
     const flagged = documents.filter(d => !d.within_limit || !d.plate || d.review_required).length;
     el('#insurance-summary').textContent =
       '총 ' + documents.length + '페이지  ·  JPG 준비 완료 ' + ready +
       '건  ·  연락처 매칭 ' + matched + '건  ·  확인 필요 ' + flagged + '건' +
+      '  ·  MMS 접수 ' + accepted + '건' +
       (conflictPlates.length ? '  ·  연락처 중복 충돌 ' + conflictPlates.length + '건' : '');
   };
   const refresh = () => {
@@ -133,22 +136,34 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
     documents.forEach((doc, index) => {
       const tr = document.createElement('tr');
       const phone = doc.phone || contacts[doc.plate] || '';
-      const state = !doc.within_limit ? '용량 초과 · 발송 보류' :
+      const state = doc.send_status === 'accepted' ? '발송 요청 접수' :
+        doc.send_status === 'sending' ? '발송 요청 중' :
+        doc.send_status === 'failed' ? '발송 실패' :
+        doc.send_status === 'unknown' ? '접수 여부 확인 필요' :
+        !doc.within_limit ? '용량 초과 · 발송 보류' :
         (!doc.plate || doc.review_required) ? '차량번호 확인 필요' :
         !isPhone(phone) ? '연락처 미지정' : '이미지·연락처 확인';
       tr.innerHTML =
         '<td><strong>' + esc(doc.source) + '</strong><br><small>' + doc.page + '페이지</small></td>' +
-        '<td><input class="insurance-plate" data-insurance-plate="' + index + '" aria-label="차량번호 수정" value="' + esc(doc.plate) + '">' +
+        '<td><input class="insurance-plate" data-insurance-plate="' + index + '" aria-label="차량번호 수정" value="' + esc(doc.plate) + '" ' +
+        (['accepted','unknown','sending'].includes(doc.send_status) ? 'disabled' : '') + '>' +
         '<small>' + esc(doc.reason || 'PDF 차량번호 항목에서 추출') + '</small>' +
         (doc.review_required ? '<button type="button" data-insurance="confirm" data-index="' + index + '">원본 확인 완료</button>' : '') + '</td>' +
-        '<td><input data-insurance-phone="' + index + '" aria-label="연락처 수정" value="' + esc(phone) + '" placeholder="01012345678"></td>' +
+        '<td><input data-insurance-phone="' + index + '" aria-label="연락처 수정" value="' + esc(phone) + '" placeholder="01012345678" ' +
+        (['accepted','unknown','sending'].includes(doc.send_status) ? 'disabled' : '') + '></td>' +
         '<td><strong>' + Math.ceil(doc.size_bytes / 1024) + 'KB</strong><br><small>' + esc(state) + '</small>' +
         (!doc.within_limit ? '<small class="insurance-warning">' + esc(doc.warning) + '</small>' : '') + '</td>' +
         '<td><button type="button" data-insurance="preview" data-index="' + index + '">미리보기</button> ' +
-        '<button type="button" data-insurance="download" data-index="' + index + '">JPG 저장</button></td>';
+        '<button type="button" data-insurance="download" data-index="' + index + '">JPG 저장</button></td>' +
+        '<td><button type="button" data-insurance="send" data-index="' + index + '" class="primary" ' +
+        (doc.within_limit && !doc.review_required && isPhone(phone) && !['accepted','unknown','sending'].includes(doc.send_status) ? '' : 'disabled') +
+        '>개별 MMS 발송</button><small>' + esc(state) + '</small>' +
+        (doc.send_error ? '<details><summary>실패 이유 · 상세 코드</summary><strong>' + esc(doc.send_error.title || '확인 필요') + '</strong><p>' +
+        esc(doc.send_error.action || '') + '</p><pre>' + esc('코드: ' + (doc.send_error.technical?.code || '미제공') +
+        '\n원문: ' + (doc.send_error.technical?.detail || '확인 불가')) + '</pre></details>' : '') + '</td>';
       rows.appendChild(tr);
     });
-    if (!documents.length) rows.innerHTML = '<tr><td colspan="5"><div class="empty">PDF를 선택하면 여기에 페이지별 결과가 표시됩니다.</div></td></tr>';
+    if (!documents.length) rows.innerHTML = '<tr><td colspan="6"><div class="empty">PDF를 선택하면 여기에 페이지별 결과가 표시됩니다.</div></td></tr>';
     summary();
   };
   const fileName = (doc, index) => (doc.plate || ('확인필요_' + (index + 1))) + '_' +
@@ -218,7 +233,9 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
     const action = b.dataset.insurance;
     const index = Number(b.dataset.index);
     const doc = documents[index];
-    if (action === 'confirm') {
+    if (action === 'send') {
+      await sender?.sendOne(index);
+    } else if (action === 'confirm') {
       if (!doc?.plate) return toast('차량번호를 입력해 주세요.');
       doc.review_required = false;
       doc.reason = '사용자가 원본 확인을 완료했습니다.';
@@ -280,5 +297,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role}) {
       }
     }
   });
+  sender = mountInsuranceSender(el('#insurance-send-mount'), {api, toast, esc, documents, jpegBytes,
+    getPhone: doc => doc.phone || contacts[doc.plate] || '', refreshRows: refresh, role});
   refresh();
 }
