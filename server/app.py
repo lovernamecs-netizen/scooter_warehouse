@@ -252,7 +252,8 @@ def create_app(database=None):
             raise HTTPException(422,'PDF 파일을 선택해 주세요.')
         raw=await file.read(MAX_PDF_BYTES+1)
         try:
-            return convert_pdf(raw)
+            from starlette.concurrency import run_in_threadpool
+            return await run_in_threadpool(convert_pdf,raw)
         except InsuranceDocumentError as exc:
             raise HTTPException(422,str(exc)) from exc
         except Exception as exc:
