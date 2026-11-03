@@ -68,7 +68,7 @@ def _secret(name: str) -> str:
 def public_settings() -> dict:
     meta = _load_public()
     return {
-        "sender_phone": meta.get("sender_phone", ""),
+        "sender_phone": meta.get("sender_phone") or os.environ.get("COOLSMS_SENDER_PHONE", ""),
         "msg_template": meta.get("msg_template", DEFAULT_MSG),
         "api_key_configured": bool(_secret("api_key")),
         "api_secret_configured": bool(_secret("api_secret")),
