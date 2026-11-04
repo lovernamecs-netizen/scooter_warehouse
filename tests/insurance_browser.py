@@ -35,6 +35,18 @@ try:
   expect(page.locator('[data-insurance=send]')).to_be_disabled()
   page.set_viewport_size({'width':390,'height':844});page.screenshot(path=str(RESULTS/'insurance-mobile.png'),full_page=True)
   assert page.locator('#insurance-tool').evaluate('(e)=>e.getBoundingClientRect().right')<=390
+  page.locator('[data-insurance=clear]').click()
+  with fitz.open() as batch:
+   for n in range(120):batch.new_page(width=600,height=850).insert_text((20,210),f'Page {n+1}')
+   batchdata=batch.tobytes()
+  page.locator('input[data-insurance=pdf]').set_input_files({'name':'batch120.pdf','mimeType':'application/pdf','buffer':batchdata})
+  expect(page.locator('#insurance-progress')).to_contain_text('현재 목록 120장',timeout=120000)
+  expect(page.locator('[data-insurance=confirm]')).to_have_count(120)
+  with fitz.open() as bad:
+   bad.new_page(width=600,height=850);bad.new_page(width=100,height=100);baddata=bad.tobytes()
+  page.locator('input[data-insurance=pdf]').set_input_files({'name':'badbatch.pdf','mimeType':'application/pdf','buffer':baddata})
+  expect(page.locator('#insurance-progress')).to_contain_text('현재 목록 120장',timeout=30000)
+  expect(page.locator('[data-insurance=confirm]')).to_have_count(120)
   assert not errors['pageerror'],errors;browser.close()
  print('PASS actual PDF conversion/contacts, ZIP <=199000 bytes, clear/reimport, blank phone, selected mock send, desktop/mobile viewport; no paid send')
 finally:stop(r)

@@ -4,11 +4,13 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import File,UploadFile,Request,HTTPException
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from sqlalchemy import select,String,Text,DateTime
 from sqlalchemy.orm import Mapped,mapped_column
 from .models import Base,now,User
 from . import customer_privacy as privacy
-from .insurance_documents import InsuranceDocumentError,convert_pdf,parse_contacts,MAX_PDF_BYTES,MAX_CONTACT_BYTES
+from .insurance_documents import InsuranceDocumentError,convert_pdf,iter_pdf,parse_contacts,MAX_PDF_BYTES,MAX_CONTACT_BYTES
 from . import insurance_settings as settings,insurance_coolsms as sms
 
 class InsuranceSend(Base):
@@ -67,10 +69,32 @@ def install(app,db,user):
         access(request)
         try:
             if not (file.filename or '').lower().endswith('.pdf'):raise HTTPException(422,'PDF 파일을 선택하세요.')
-            data=await file.read(MAX_PDF_BYTES+1)
             if not _conversion.acquire(blocking=False):raise HTTPException(429,'다른 문서를 변환 중입니다. 완료 후 다시 시도하세요.')
-            try:return await run_in_threadpool(call,convert_pdf,data)
-            finally:_conversion.release()
+            streaming=False
+            try:
+                data=await file.read(MAX_PDF_BYTES+1)
+                if request.query_params.get('stream')!='1':return await run_in_threadpool(call,convert_pdf,data)
+                events=iter_pdf(data)
+                first=await run_in_threadpool(call,next,events)
+                released=False
+                def cleanup():
+                    nonlocal released
+                    if not released:
+                        released=True
+                        events.close()
+                        _conversion.release()
+                def lines():
+                    try:
+                        yield json.dumps(first)+'\n'
+                        for event in events:yield json.dumps(event,ensure_ascii=False)+'\n'
+                    except InsuranceDocumentError as exc:yield json.dumps({'type':'error','message':str(exc)},ensure_ascii=False)+'\n'
+                    except Exception:yield json.dumps({'type':'error','message':'PDF 변환이 중단됐습니다. 원본 파일을 확인하고 다시 시도하세요.'},ensure_ascii=False)+'\n'
+                    finally:cleanup()
+                response=StreamingResponse(lines(),media_type='application/x-ndjson',headers={'Cache-Control':'no-store','X-Accel-Buffering':'no'},background=BackgroundTask(cleanup))
+                streaming=True
+                return response
+            finally:
+                if not streaming:_conversion.release()
         finally:await file.close()
 
     @app.post('/api/insurance/contacts')

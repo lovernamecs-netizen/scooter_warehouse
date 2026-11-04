@@ -44,11 +44,12 @@ const formSafety=installFormSafety($('#modal'),toast);
 function describe(x){if(typeof x==='string')return x;if(x?.code==='FIFO_PRIORITY')return x.message;if(x?.message&&Array.isArray(x.areas))return x.message+'\n확인이 필요한 영역: '+x.areas.join(', ')+'\n취소 후 지도 편집에서 해당 구역을 안쪽으로 옮기거나, 창고 가로·세로 크기와 외곽 형태를 조정하세요.';return safeMessage(x)}
 async function api(path,options={}){
  const purchaseRead=['/purchases/google','/purchases/xlsx'].includes(path);
- const controller=new AbortController(),t=setTimeout(()=>controller.abort(),path==='/purchases/import'?300000:purchaseRead?180000:options.blob||path.includes('/upload')||path.startsWith('/insurance/convert')||path==='/photo-backup'||path.startsWith('/photo-restore/')?120000:path==='/vin/ocr'?50000:path==='/command'?90000:20000);
+ const controller=new AbortController(),t=setTimeout(()=>controller.abort(),options.stream?1200000:path==='/purchases/import'?300000:purchaseRead?180000:options.blob||path.includes('/upload')||path.startsWith('/insurance/convert')||path==='/photo-backup'||path.startsWith('/photo-restore/')?120000:path==='/vin/ocr'?50000:path==='/command'?90000:20000);
  try{
   let r;try{r=await fetch('/api'+path,{...options,signal:controller.signal,headers:{...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(token?{Authorization:'Bearer '+token}:{}),...options.headers}});}catch(cause){const timedOut=controller.signal.aborted;if(!timedOut)online=false;const error=Error(purchaseRead?(timedOut?'파일 읽기 대기 시간을 초과했습니다. 아직 자료 저장은 시작되지 않았습니다. 다시 가져오기를 눌러주세요.':'파일 읽기 중 연결이 끊겼습니다. 아직 자료 저장은 시작되지 않았습니다.'):path==='/purchases/import'?'전체 저장의 응답을 확인하지 못했습니다. 창을 닫지 말고 같은 가져오기 버튼을 다시 눌러 저장 결과를 확인하세요.':'서버와 연결하지 못했습니다. 저장 요청이었다면 결과를 확인하지 못한 상태입니다. 연결 복구 후 같은 요청의 처리 여부를 확인해주세요.');error.uncertain=!purchaseRead;throw error;}
   if(!r.ok){let d;try{d=await r.json()}catch{d={}};const error=Error(safeMessage(d.message||d.detail,r.status));error.status=r.status;error.requestId=/^[a-f0-9]{32}$/.test(d.request_id||'')?d.request_id:null;error.fieldErrors=d.field_errors;error.uncertain=r.status>=500;
    if(r.status===401&&path!=='/login'){token='';sessionStorage.removeItem('warehouseToken');error.message='로그인이 만료되었습니다. 작성 내용을 보존한 뒤 다시 로그인하세요.';}throw error;}
+  if(options.stream){online=true;return await options.stream(r.body);}
   online=true;try{return options.blob?await r.blob():await r.json();}catch{const error=Error('서버 응답을 확인하지 못했습니다. 저장 요청의 처리 여부를 확인해주세요.');error.uncertain=true;throw error;}
  }finally{clearTimeout(t)}
 }

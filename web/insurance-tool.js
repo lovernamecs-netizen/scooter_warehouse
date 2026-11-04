@@ -104,7 +104,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     '<section class="panel insurance-card">' +
       '<div class="panel-head"><div><h2>보험증권 · 이미지 준비</h2><p class="muted">PDF 원본은 수정하지 않습니다. 지정된 흰색 가림 영역만 적용하고 RGB 컬러로 JPG를 생성합니다.</p></div></div>' +
       '<div class="insurance-actions">' +
-        '<label class="insurance-upload">보험증권 PDF 선택 (다중)<input data-insurance="pdf" type="file" accept=".pdf,application/pdf" multiple></label>' +
+        '<label class="insurance-upload">보험증권 PDF 선택 (파일당 500페이지·35MB)<input data-insurance="pdf" type="file" accept=".pdf,application/pdf" multiple></label>' +
         '<label class="insurance-upload secondary">JPG 폴더 선택<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" webkitdirectory multiple></label>' +
         '<label class="insurance-upload secondary">JPG 파일 선택<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" multiple></label>' +
         '<label class="insurance-upload secondary">거래처 연락처 CSV/XLS/XLSX<input data-insurance="contacts" type="file" accept=".csv,.xls,.xlsx"></label>' +
@@ -211,21 +211,42 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
           toast('PDF만 선택해 주세요: ' + file.name);
           continue;
         }
+        const startIndex=documents.length;
         try {
+          if(file.size>35*1024*1024)throw Error("PDF는 파일당 35MB까지 지원합니다.");
           const form = new FormData();
           form.append('file', file);
-          const result = await api('/insurance/convert', {method: 'POST', body: form});
-          for (const page of result.pages) {
-            documents.push({...page, source: file.name, phone: '', manualPhone: false, review_required: true,
-              reason: page.reason || '자동 추출한 차량번호입니다. 원본을 대조하고 확인 완료를 눌러 주세요.'});
-          }
+          await api('/insurance/convert?stream=1', {method: 'POST', body: form, stream: async body=>{
+            const reader=body.getReader(),decoder=new TextDecoder();let buffer='',complete=false;
+            const consume=line=>{
+              if(!line.trim())return;
+              const event=JSON.parse(line);
+              if(event.type==='error')throw Error(event.message);
+              if(event.type==='complete'){complete=true;return;}
+              if(event.type!=='page')return;
+              const page=event.record;
+              documents.push({...page, source:file.name, phone:'', manualPhone:false, review_required:true,
+                reason:page.reason||'자동 추출한 차량번호입니다. 원본을 대조하고 확인 완료를 눌러 주세요.'});
+              if(page.page%10===0)refresh();
+              el('#insurance-progress').textContent=file.name+' · '+page.page+'/'+event.total+'페이지 변환';
+            };
+            try{
+              while(true){const chunk=await reader.read();buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!chunk.done});let end;
+                while((end=buffer.indexOf('\n'))>=0){consume(buffer.slice(0,end));buffer=buffer.slice(end+1);}
+                if(chunk.done)break;
+              }
+              if(buffer.trim())consume(buffer);
+              if(!complete)throw Error('변환 완료를 확인하지 못했습니다. 해당 PDF를 다시 선택하세요.');
+            }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+          }});
           refresh();
         } catch (error) {
+          documents.splice(startIndex);refresh();
           toast(file.name + ': ' + error.message);
           el('#insurance-progress').textContent = error.message;
         }
       }
-      el('#insurance-progress').textContent = 'PDF 변환 작업 종료 · 원본과 결과를 확인해 주세요.';
+      el('#insurance-progress').textContent = 'PDF 처리 종료 · 현재 목록 '+documents.length+'장 (실패 파일은 목록에 추가되지 않습니다.)';
     } else if (kind === 'jpg') {
       const files = Array.from(target.files || []).filter(file => /\.jpe?g$/i.test(file.name));
       target.value = '';

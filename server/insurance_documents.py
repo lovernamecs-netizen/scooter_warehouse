@@ -9,9 +9,9 @@ import unicodedata
 import zipfile
 
 MASK_RECT = (330, 400, 585, 435)
-MAX_PDF_BYTES = 15 * 1024 * 1024
+MAX_PDF_BYTES = 35 * 1024 * 1024
 MAX_CONTACT_BYTES = 5 * 1024 * 1024
-MAX_PAGES = 60
+MAX_PAGES = 500
 MAX_JPEG_BYTES = 199_000
 MAX_MMS_WIDTH = 1500
 MAX_MMS_HEIGHT = 1440
@@ -131,9 +131,9 @@ def extract_page_plate(page):
     return full
 
 
-def convert_pdf(data: bytes, *, max_bytes: int = MAX_JPEG_BYTES) -> dict:
+def iter_pdf(data: bytes, *, max_bytes: int = MAX_JPEG_BYTES):
     if not data or len(data) > MAX_PDF_BYTES:
-        raise InsuranceDocumentError("PDF 파일 크기가 허용 범위(15MB)를 초과하거나 비어 있습니다.")
+        raise InsuranceDocumentError("PDF 파일 크기가 허용 범위(35MB)를 초과하거나 비어 있습니다.")
     if not 50 * 1024 <= max_bytes <= 1024 * 1024:
         raise InsuranceDocumentError("이미지 용량 제한 설정이 올바르지 않습니다.")
     try:
@@ -145,12 +145,12 @@ def convert_pdf(data: bytes, *, max_bytes: int = MAX_JPEG_BYTES) -> dict:
         doc = fitz.open(stream=data, filetype="pdf")
     except Exception as exc:
         raise InsuranceDocumentError("PDF를 읽을 수 없습니다. 파일 형식을 확인해 주세요.") from exc
-    result = []
     try:
         if doc.needs_pass:
             raise InsuranceDocumentError("암호화된 PDF는 처리할 수 없습니다.")
         if len(doc) > MAX_PAGES:
-            raise InsuranceDocumentError("한 파일의 PDF 페이지는 최대 60장까지 처리할 수 있습니다.")
+            raise InsuranceDocumentError("한 파일의 PDF 페이지는 최대 500장까지 처리할 수 있습니다.")
+        yield {"type": "start", "total": len(doc)}
         for index, page in enumerate(doc):
             page_rect = page.rect
             if page_rect.width * page_rect.height > 2_000_000 or max(page_rect.width,page_rect.height)>2400:
@@ -173,7 +173,7 @@ def convert_pdf(data: bytes, *, max_bytes: int = MAX_JPEG_BYTES) -> dict:
                                          colorspace=fitz.csRGB, alpha=False)
                 image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             jpg, within, width, height = _encode_jpeg(image, max_bytes)
-            result.append({
+            yield {"type": "page", "total": len(doc), "record": {
                 "page": index + 1,
                 "plate": plate_info["plate"],
                 "candidates": plate_info["candidates"],
@@ -185,9 +185,14 @@ def convert_pdf(data: bytes, *, max_bytes: int = MAX_JPEG_BYTES) -> dict:
                 "height": height,
                 "jpeg_base64": base64.b64encode(jpg).decode("ascii"),
                 "warning": "" if within else "용량 제한 안에서 가독성을 유지하지 못했습니다. MMS 발송을 중단하세요.",
-            })
+            }}
     finally:
         doc.close()
+    yield {"type": "complete"}
+
+
+def convert_pdf(data: bytes, *, max_bytes: int = MAX_JPEG_BYTES) -> dict:
+    result = [event["record"] for event in iter_pdf(data, max_bytes=max_bytes) if event["type"] == "page"]
     return {"pages": result, "limit_bytes": max_bytes, "color_mode": "RGB",
             "mask_rect": list(MASK_RECT)}
 
