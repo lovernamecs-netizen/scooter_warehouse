@@ -2,7 +2,7 @@
 let busy=false;
 export const isLibraryBusy=()=>busy;
 export function mountInsuranceLibrary(target,{api,toast,esc,getLocal,onLoad,refreshLocal,canUse=()=>true}){
- target.innerHTML='<section class="panel insurance-card"><div class="panel-head"><h2>공용 증권함</h2><span>관리자 전용</span></div>'+ 
+ target.innerHTML='<section class="panel insurance-card"><div class="panel-head"><h2>공용 증권함</h2><span>관리자 전용</span></div>'+
  '<details><summary>서버 PC 저장 경로</summary><p id="library-path"></p><label>새 저장 경로<input id="library-path-input" autocomplete="off"></label><button data-library="path">경로 설정</button><p class="muted">새 파일부터 적용됩니다. 이전 경로의 증권도 계속 조회됩니다. 암호화 파일은 프로그램에서 내려받으세요.</p><div id="library-roots"></div></details>'+
  '<div class="insurance-actions"><button data-library="save-local">현재 검색 결과 공용 저장</button><label class="insurance-upload secondary">JPEG 폴더 공용 등록<input id="library-folder" type="file" accept=".jpg,.jpeg" webkitdirectory multiple></label><button data-library="cancel" disabled>등록 중단</button></div>'+
  '<form id="library-search" class="insurance-search"><label>차량번호·파일명<input id="library-query" type="search" enterkeyhint="search" maxlength="80" autocomplete="off"></label><button>검색</button><button type="button" data-library="reset">전체 보기</button></form>'+
