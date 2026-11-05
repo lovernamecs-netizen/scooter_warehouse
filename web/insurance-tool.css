@@ -20,3 +20,6 @@ dialog.insurance-preview{width:min(1000px,96vw);max-height:92dvh;border:1px soli
 @media(max-width:850px){#insurance-tool .insurance-send-grid{grid-template-columns:1fr}#insurance-tool .insurance-card{padding:14px}#insurance-tool .insurance-error-fields{grid-template-columns:1fr}}
 
 #insurance-tool .insurance-search{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:16px 0 8px}#insurance-tool .insurance-search label{margin:0}#insurance-tool .insurance-search label:nth-child(2){flex:1;min-width:180px}#insurance-tool .insurance-search input,#insurance-tool .insurance-search select{margin-top:6px;min-height:42px}#insurance-tool .insurance-search button{min-height:42px}#insurance-tool .insurance-table td:first-child+td{overflow-wrap:anywhere}
+
+#library-list td{vertical-align:top;overflow-wrap:anywhere}#library-list td button{margin:3px}
+@media(max-width:720px){#library-list table,#library-list tbody,#library-list tr,#library-list td{display:block;width:100%;min-width:0}#library-list thead{display:none}#library-list tr{padding:12px 0;border-bottom:1px solid var(--border)}#library-list td{border:0;padding:6px 0}#library-list td:last-child{display:flex;flex-wrap:wrap;gap:4px}}

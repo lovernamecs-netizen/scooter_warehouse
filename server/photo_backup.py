@@ -73,6 +73,14 @@ def backup(db):
       for field in ['path','thumbnail']:
        source=safe(root_path,entry[field])
        if source.is_file():files.append((prefix+field+'/'+source.name,source,None))
+    from .insurance_library import InsuranceDocument,config as library_config,MARKER,marker_ok
+    library=library_config(s)
+    manifest['insurance_roots']=library['roots']
+    for ident,folder in library['roots'].items():
+     if not marker_ok(folder,ident):raise ValueError('공용 증권 저장 경로 확인 필요')
+     files.append(('insurance/'+ident+'/'+MARKER,Path(folder)/MARKER,None))
+    for doc in s.scalars(select(InsuranceDocument)):
+     files.append(('insurance/'+doc.root_id+'/'+doc.file,safe(library['roots'][doc.root_id],doc.file),doc.cipher_digest))
    with closing(sqlite3.connect(snapshot)) as output:
     if output.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise ValueError('백업 DB 무결성 오류')
    with zipfile.ZipFile(Path(tmp)/name,'w',zipfile.ZIP_DEFLATED,compresslevel=1) as z:
@@ -143,6 +151,10 @@ def restore(path,destination,confirm=False):
    if row:
     cfg=json.loads(row[0]);cfg['roots']={k:str(dest/'photos'/k) for k in cfg['roots']};cfg['backup_path']=str(dest/'Backups');cfg['daily']=False
     con.execute("UPDATE settings SET value=? WHERE key='photo_storage'",(json.dumps(cfg),))
+   library=con.execute("SELECT value FROM settings WHERE key='insurance_library_storage'").fetchone()
+   if library:
+    cfg=json.loads(library[0]);cfg['roots']={k:str(dest/'insurance'/k) for k in cfg['roots']}
+    con.execute("UPDATE settings SET value=? WHERE key='insurance_library_storage'",(json.dumps(cfg),))
    # Restored credentials must not retain live sessions from a backup.
    con.execute('DELETE FROM sessions');con.commit()
   os.replace(tmp,dest)

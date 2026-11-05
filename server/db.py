@@ -19,6 +19,7 @@ class Database:
                 dbapi.execute('PRAGMA journal_mode=WAL')
     def init(self,seed_catalog=True):
         from .insurance_api import InsuranceSend
+        from .insurance_library import InsuranceDocument,InsuranceDocumentSearch
         Base.metadata.create_all(self.engine)
         with self.transaction() as s:
             if not s.get(Guard,1): s.add(Guard(id=1,revision=0))
@@ -37,7 +38,7 @@ class Database:
             pin_owner(s)
             from .bundles import catalog
             if seed_catalog:catalog(s)
-            for table in ['outbound','history','closings','adjustments','layout_revisions','vehicle_inventory_snapshots','vehicle_inventory_events','vehicle_valuations','vehicle_inventory_facts','vehicle_inventory_requests','purchase_records','purchase_review_events','security_owner','customers','order_customers','outbound_customers','customer_audit','vehicle_customer_events']:
+            for table in ['outbound','history','closings','adjustments','layout_revisions','vehicle_inventory_snapshots','vehicle_inventory_events','vehicle_valuations','vehicle_inventory_facts','vehicle_inventory_requests','purchase_records','purchase_review_events','security_owner','customers','order_customers','outbound_customers','customer_audit','vehicle_customer_events','insurance_documents','insurance_document_search']:
                 if self.sqlite:
                     for op in ['UPDATE','DELETE']:
                         s.execute(text(f"CREATE TRIGGER IF NOT EXISTS immutable_{table}_{op} BEFORE {op} ON {table} BEGIN SELECT RAISE(ABORT, 'immutable record'); END"))

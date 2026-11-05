@@ -10,6 +10,7 @@ def start(port=0,demo=True):
     temp=tempfile.TemporaryDirectory(prefix='warehouse-smoke-')
     directory=Path(temp.name);identity=uuid.uuid4().hex
     env=dict(os.environ,DATABASE_URL='sqlite:///'+str(directory/'test.db'),WAREHOUSE_ADMIN_PASSWORD=PASSWORD,PYTHONUTF8='1',PYTHONPATH=str(ROOT));env.pop('TEST_DATABASE_URL',None);env.pop('WAREHOUSE_DATA_DIR',None)
+    env.update(INSURANCE_CONFIG_DIR=str(directory/'insurance-config'),COOLSMS_API_KEY='synthetic-test-only',COOLSMS_API_SECRET='synthetic-test-only',COOLSMS_SENDER_PHONE='01011112222')
     from cryptography.fernet import Fernet
     private=directory/'customer.key';private.write_bytes(Fernet.generate_key());env['WAREHOUSE_CUSTOMER_KEY_FILE']=str(private)
     process=log=None

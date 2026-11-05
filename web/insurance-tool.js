@@ -1,16 +1,18 @@
 // 보험증권 변환·연락처·CoolSMS 발송 통합 UI.
+import {mountInsuranceLibrary,isLibraryBusy} from './insurance-library.js';
 import {mountInsuranceSender,isInsuranceSending} from './insurance-sender.js';
 let documents = [];
 let contacts = {};
 let conflictPlates = [];
 let loading=0;
-export const isInsuranceBusy=()=>loading>0||isInsuranceSending();
+export const isInsuranceBusy=()=>loading>0||isInsuranceSending()||isLibraryBusy();
 const cleanPlate = value => String(value || '').normalize('NFKC').replace(/[^0-9가-힣]/g, '');
 const isPlate = plate => /^(?:\d{1,3}[가-힣]\d{4,5}|(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)[가-힣]{3,6}\d{4,5})$/.test(plate);
 const cleanPhone = value => String(value || '').replace(/\D/g, '');
 const isPhone = value => /^01[016789]\d{7,8}$/.test(value);
 
 export function clearInsuranceTool() {
+  document.querySelectorAll('.insurance-preview').forEach(dialog=>{dialog.close();dialog.remove();});
   documents.splice(0);
   contacts = {};
   conflictPlates = [];
@@ -101,6 +103,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     conflictPlates = [...(previewData.conflictPlates || [])];
   }
   container.innerHTML =
+    '<div id="insurance-library-mount"></div>' +
     '<section class="panel insurance-card">' +
       '<div class="panel-head"><div><h2>보험증권 · 이미지 준비</h2><p class="muted">PDF 원본은 수정하지 않습니다. 지정된 흰색 가림 영역만 적용하고 RGB 컬러로 JPG를 생성합니다.</p></div></div>' +
       '<div class="insurance-actions">' +
@@ -192,7 +195,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     el('[data-insurance=zip]').textContent=searchTerm?'검색 결과 검증 JPG ZIP':'검증된 JPG 일괄 ZIP';
     const allSend=el('[data-mms=send-all]');if(allSend)allSend.textContent=searchTerm?'검색 결과 일괄 MMS 발송':'전체 목록 일괄 MMS 발송';
     summary();
-    if(isInsuranceBusy())container.querySelectorAll("input,textarea,button").forEach(x=>x.disabled=true);
+    container.querySelectorAll("input,textarea,button").forEach(x=>{if(x.closest('#insurance-library-mount'))return;if(isInsuranceBusy())x.disabled=true;else if(x.dataset.insurance!=='send'&&x.dataset.insurance!=='download'&&x.dataset.insurancePlate===undefined&&x.dataset.insurancePhone===undefined)x.disabled=false;});
   };
   const fileName = (doc, index) => {
     const base = doc.plate || ('미인식_p' + doc.page);
@@ -422,6 +425,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
   });
   sender = mountInsuranceSender(el('#insurance-send-mount'), {api, toast, esc, documents, jpegBytes,
     getPhone: doc => doc.manualPhone ? doc.phone : (contacts[doc.plate] || doc.phone || ''), refreshRows: refresh, role,
-    canSend:()=>loading===0, getScope:visibleIndices, scopeName:()=>searchTerm?'검색 결과':'전체 목록', getSelected: () => [...selected]});
+    canSend:()=>loading===0&&!isLibraryBusy(), getScope:visibleIndices, scopeName:()=>searchTerm?'검색 결과':'전체 목록', getSelected: () => [...selected]});
+  mountInsuranceLibrary(el('#insurance-library-mount'),{api,toast,esc,getLocal:()=>visibleIndices().map(i=>documents[i]),onLoad:doc=>{if(!documents.some(d=>d.id===doc.id))documents.push(doc);searchTerm='';selected.clear();refresh();},refreshLocal:refresh,canUse:()=>loading===0&&!isInsuranceSending()});
   refresh();
 }

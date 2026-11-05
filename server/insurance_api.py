@@ -57,6 +57,8 @@ def send(db,uid,data):
     return result
 
 def install(app,db,user):
+    from .insurance_library import install as install_library,require_admin
+    install_library(app,db,user)
     def access(request):
         with db.read() as s:
             u=user(s,request);privacy.allowed(s,u);return u.id

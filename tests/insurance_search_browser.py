@@ -18,7 +18,7 @@ try:
    calls.append(route.request.post_data_json);route.fulfill(json={'state':'accepted'})
   page.route('**/api/insurance/mms/send',send)
   page.goto(r[3]);page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload();nav(page,'insurance')
-  page.locator('input[webkitdirectory]').set_input_files(str(folder))
+  page.locator('input[data-insurance=jpg][webkitdirectory]').set_input_files(str(folder))
   expect(page.locator('#insurance-progress')).to_contain_text('JPG 3개')
   expect(page.locator('[data-insurance-plate]')).to_have_count(3)
   for plate in ['123가4567','234나5678']:
