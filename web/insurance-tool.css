@@ -18,3 +18,5 @@
 dialog.insurance-preview{width:min(1000px,96vw);max-height:92dvh;border:1px solid var(--border);border-radius:12px;padding:20px;overflow:auto;background:white}
 .insurance-preview::backdrop{background:#12232d99}.insurance-preview-head{display:flex;justify-content:space-between;gap:12px}.insurance-preview img{display:block;width:100%;height:auto;margin-top:16px}.insurance-preview p{font-size:13px;color:#526875}
 @media(max-width:850px){#insurance-tool .insurance-send-grid{grid-template-columns:1fr}#insurance-tool .insurance-card{padding:14px}#insurance-tool .insurance-error-fields{grid-template-columns:1fr}}
+
+#insurance-tool .insurance-search{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:16px 0 8px}#insurance-tool .insurance-search label{margin:0}#insurance-tool .insurance-search label:nth-child(2){flex:1;min-width:180px}#insurance-tool .insurance-search input,#insurance-tool .insurance-search select{margin-top:6px;min-height:42px}#insurance-tool .insurance-search button{min-height:42px}#insurance-tool .insurance-table td:first-child+td{overflow-wrap:anywhere}

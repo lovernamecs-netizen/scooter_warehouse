@@ -105,16 +105,21 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
       '<div class="panel-head"><div><h2>보험증권 · 이미지 준비</h2><p class="muted">PDF 원본은 수정하지 않습니다. 지정된 흰색 가림 영역만 적용하고 RGB 컬러로 JPG를 생성합니다.</p></div></div>' +
       '<div class="insurance-actions">' +
         '<label class="insurance-upload">보험증권 PDF 선택 (파일당 500페이지·35MB)<input data-insurance="pdf" type="file" accept=".pdf,application/pdf" multiple></label>' +
-        '<label class="insurance-upload secondary">JPG 폴더 선택<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" webkitdirectory multiple></label>' +
-        '<label class="insurance-upload secondary">JPG 파일 선택<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" multiple></label>' +
+        '<label class="insurance-upload secondary">JPEG 폴더 열기<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" webkitdirectory multiple></label>' +
+        '<label class="insurance-upload secondary">JPEG 파일 열기<input data-insurance="jpg" type="file" accept="image/jpeg,.jpg,.jpeg" multiple></label>' +
         '<label class="insurance-upload secondary">거래처 연락처 CSV/XLS/XLSX<input data-insurance="contacts" type="file" accept=".csv,.xls,.xlsx"></label>' +
         '<button type="button" data-insurance="zip" class="primary">검증된 JPG 일괄 ZIP</button>' +
         '<button type="button" data-insurance="clear">목록 초기화</button>' +
       '</div>' +
       '<p class="muted">MMS 첨부: 199,000바이트 이하 · 차량번호와 원본을 확인한 뒤 발송하세요.</p>' +
       '<p id="insurance-progress" role="status" class="muted"></p>' +
+      '<form id="insurance-search" class="insurance-search" role="search">' +
+        '<label>검색 항목<select id="insurance-search-field"><option value="all">차량번호·파일명</option><option value="plate">차량번호</option><option value="file">증권 파일명·폴더</option></select></label>' +
+        '<label>검색어<input id="insurance-search-query" type="search" enterkeyhint="search" placeholder="차량번호 또는 증권 파일명" autocomplete="off"></label>' +
+        '<button type="submit">검색</button><button type="button" data-insurance="search-reset">전체 보기</button>' +
+      '</form><p id="insurance-search-status" class="muted" role="status"></p>' +
       '<div id="insurance-summary" class="insurance-summary"></div>' +
-      '<div class="table-wrap"><table class="insurance-table"><thead><tr><th><input type="checkbox" data-insurance-select-all aria-label="전체 항목 선택"></th><th>보험증권</th><th>차량번호 · 원본 확인</th><th>연락처</th><th>용량 · 상태</th><th>미리보기 / 저장</th><th>MMS 개별 발송 · 결과</th></tr></thead><tbody id="insurance-rows"></tbody></table></div>' +
+      '<div class="table-wrap"><table class="insurance-table"><thead><tr><th><input type="checkbox" data-insurance-select-all aria-label="검색 결과 전체 선택"></th><th>보험증권</th><th>차량번호 · 원본 확인</th><th>연락처</th><th>용량 · 상태</th><th>미리보기 / 저장</th><th>MMS 개별 발송 · 결과</th></tr></thead><tbody id="insurance-rows"></tbody></table></div>' +
     '</section>' +
     '<div id="insurance-send-mount"></div>' +
     '<details class="panel insurance-card"><summary>최근 발송 기록</summary><button type="button" data-insurance=history>최근 50건 조회</button><div id="insurance-history"></div></details>' +
@@ -128,6 +133,11 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
   const el = selector => container.querySelector(selector);
   let sender = null;
   const selected = new Set();
+  let searchTerm='',searchField='all';
+  const normalizeSearch=value=>String(value||'').normalize('NFKC').toLocaleLowerCase().replace(/[\s_-]/g,'');
+  const matches=doc=>!searchTerm||(searchField!=='file'&&normalizeSearch(doc.plate).includes(searchTerm))||
+    (searchField!=='plate'&&normalizeSearch((doc.source_path||'')+' '+doc.source).includes(searchTerm));
+  const visibleIndices=()=>documents.flatMap((doc,index)=>matches(doc)?[index]:[]);
   const summary = () => {
     const ready = documents.filter(d => d.within_limit && d.plate && !d.review_required).length;
     const matched = documents.filter(d => isPhone(d.manualPhone ? d.phone : (contacts[d.plate] || d.phone || ''))).length;
@@ -143,6 +153,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     const rows = el('#insurance-rows');
     rows.innerHTML = '';
     documents.forEach((doc, index) => {
+      if(!matches(doc))return;
       const tr = document.createElement('tr');
       const phone = doc.manualPhone ? doc.phone : (contacts[doc.plate] || doc.phone || '');
       const state = doc.send_status === 'accepted' ? '발송 요청 접수' :
@@ -154,7 +165,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
         !isPhone(phone) ? '연락처 미지정' : '이미지·연락처 확인';
       tr.innerHTML =
         '<td><input type="checkbox" data-insurance-select="' + index + '" ' + (selected.has(index) ? 'checked' : '') + ' aria-label="발송 항목 선택"></td>' +
-        '<td><strong>' + esc(doc.source) + '</strong><br><small>' + doc.page + '페이지</small></td>' +
+        '<td><strong>' + esc(doc.source) + '</strong>' + (doc.source_path?'<small>'+esc(doc.source_path)+'</small>':'') + '<br><small>' + doc.page + '페이지</small></td>' +
         '<td><input class="insurance-plate" data-insurance-plate="' + index + '" aria-label="차량번호 수정" value="' + esc(doc.plate) + '" ' +
         (['accepted','unknown','sending'].includes(doc.send_status) ? 'disabled' : '') + '>' +
         '<small>' + esc(doc.reason || 'PDF 차량번호 항목에서 추출') + '</small>' +
@@ -173,7 +184,13 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
         '\n원문: ' + (doc.send_error.technical?.detail || '확인 불가')) + '</pre></details>' : '') + '</td>';
       rows.appendChild(tr);
     });
-    if (!documents.length) rows.innerHTML = '<tr><td colspan="7"><div class="empty">PDF를 선택하면 여기에 페이지별 결과가 표시됩니다.</div></td></tr>';
+    const visible=visibleIndices();
+    for(const index of selected)if(!visible.includes(index))selected.delete(index);
+    if(!visible.length)rows.innerHTML='<tr><td colspan="7"><div class="empty">'+(documents.length?'검색 결과가 없습니다.':'PDF 또는 JPEG 폴더·파일을 선택하세요.')+'</div></td></tr>';
+    el('#insurance-search-status').textContent='검색 결과 '+visible.length+' / 전체 '+documents.length+'건 · 선택 '+selected.size+'건';
+    const check=el('[data-insurance-select-all]');check.checked=visible.length>0&&visible.every(i=>selected.has(i));check.indeterminate=selected.size>0&&!check.checked;
+    el('[data-insurance=zip]').textContent=searchTerm?'검색 결과 검증 JPG ZIP':'검증된 JPG 일괄 ZIP';
+    const allSend=el('[data-mms=send-all]');if(allSend)allSend.textContent=searchTerm?'검색 결과 일괄 MMS 발송':'전체 목록 일괄 MMS 발송';
     summary();
     if(isInsuranceBusy())container.querySelectorAll("input,textarea,button").forEach(x=>x.disabled=true);
   };
@@ -183,6 +200,13 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     return base + (prior ? '_' + prior : '') + '.jpg';
   };
 
+  const searchForm=el('#insurance-search');
+  searchForm.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.isComposing||event.keyCode===229))event.preventDefault();});
+  searchForm.addEventListener('submit',event=>{
+    event.preventDefault();if(isInsuranceBusy())return;
+    searchTerm=normalizeSearch(el('#insurance-search-query').value);searchField=el('#insurance-search-field').value;
+    selected.clear();refresh();
+  });
   container.addEventListener('change', async event => {
     if(isInsuranceBusy())return;
     const target = event.target;
@@ -193,11 +217,11 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     if (target.dataset.insuranceSelect !== undefined) {
       const index = Number(target.dataset.insuranceSelect);
       if (target.checked) selected.add(index); else selected.delete(index);
-      return;
+      refresh();return;
     }
     if (target.dataset.insuranceSelectAll !== undefined) {
       selected.clear();
-      if (target.checked) documents.forEach((doc, index) => selected.add(index));
+      if (target.checked) visibleIndices().forEach(index => selected.add(index));
       refresh();
       return;
     }
@@ -274,7 +298,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
           const plate = cleanPlate(originalName);
           const within = file.size <= 199000 && width <= 1500 && height <= 1440;
           documents.push({
-            source: file.name, page: 1, plate, candidates: plate ? [plate] : [],
+            source: file.name, source_path:file.webkitRelativePath||'', page: 1, plate, candidates: plate ? [plate] : [],
             review_required: true, reason: '가져온 JPG 파일명입니다. 원본과 차량번호를 확인해 주세요.',
             within_limit: within, width, height, size_bytes: file.size,
             jpeg_base64: String(dataUrl).split(',')[1], phone: contacts[plate] || '',
@@ -325,7 +349,8 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     const action = b.dataset.insurance;
     const index = Number(b.dataset.index);
     const doc = documents[index];
-    if (action === 'history') {
+    if(action==='search-reset'){searchTerm='';selected.clear();refresh();
+    } else if (action === 'history') {
       try {
         const rows=await api('/insurance/mms/history');
         el('#insurance-history').innerHTML='<div class="table-wrap"><table><thead><tr><th>시간</th><th>계정</th><th>차량번호</th><th>수신번호</th><th>접수 상태</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.at.replace('T',' ').slice(0,19)+' UTC')+'</td><td>'+esc(row.actor)+'</td><td>'+esc(row.plate)+'</td><td>'+esc(row.phone)+'</td><td>'+esc({accepted:'접수 완료',failed:'실패',unknown:'확인 필요'}[row.state]||row.state)+'</td></tr>').join('')+'</tbody></table></div>';
@@ -354,7 +379,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
       viewer.showModal();
     } else if (action === 'zip') {
       const eligible = documents.map((d, index) => ({doc: d, index}))
-        .filter(({doc}) => doc.within_limit && doc.plate && !doc.review_required);
+        .filter(({doc}) => matches(doc) && doc.within_limit && doc.plate && !doc.review_required);
       if (!eligible.length) return toast('검증 완료된 199KB 이하 JPG가 없습니다.');
       const items = eligible.map(({doc, index}) => ({name: fileName(doc, index), bytes: jpegBytes(doc)}));
       download(zipFile(items), '보험증권_변환결과.zip');
@@ -362,7 +387,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     } else if (action === 'clear') {
       if (!window.confirm('보험증권과 연락처 임시 목록을 초기화하시겠습니까?')) return;
       clearInsuranceTool();
-      selected.clear();
+      selected.clear();searchTerm='';el('#insurance-search-query').value='';
       refresh();
       el('#insurance-progress').textContent = '목록을 초기화했습니다.';
       el('#insurance-error-result').textContent = '';
@@ -397,6 +422,6 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
   });
   sender = mountInsuranceSender(el('#insurance-send-mount'), {api, toast, esc, documents, jpegBytes,
     getPhone: doc => doc.manualPhone ? doc.phone : (contacts[doc.plate] || doc.phone || ''), refreshRows: refresh, role,
-    canSend:()=>loading===0, getSelected: () => [...selected]});
+    canSend:()=>loading===0, getScope:visibleIndices, scopeName:()=>searchTerm?'검색 결과':'전체 목록', getSelected: () => [...selected]});
   refresh();
 }

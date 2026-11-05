@@ -16,7 +16,7 @@ function encodeHumanError(esc, error) {
     '</pre></details></div>';
 }
 
-export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBytes, getPhone, refreshRows, role, getSelected, canSend=()=>true}) {
+export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBytes, getPhone, refreshRows, role, getSelected, canSend=()=>true, getScope=()=>documents.map((_,i)=>i), scopeName=()=>'전체 목록'}) {
   if (!target) return {sendOne: async () => {}};
   target.innerHTML =
     '<section class="panel insurance-card insurance-send-card">' +
@@ -148,15 +148,16 @@ export function mountInsuranceSender(target, {api, toast, esc, documents, jpegBy
   async function sendAll(selectedOnly = false) {
     if(sending||!canSend())return;
     if (!settingsLoaded || !providerConfigured) return toast('CoolSMS 계정 설정이 필요합니다.');
-    const requested = selectedOnly ? new Set(getSelected()) : null;
+    const scope=new Set(getScope());
+    const requested = selectedOnly ? new Set(getSelected()) : scope;
     const eligible = documents.map((doc, index) => ({doc, index})).filter(({doc,index}) =>
-      (!requested || requested.has(index)) &&
+      scope.has(index) && requested.has(index) &&
       doc.within_limit && doc.plate && !doc.review_required &&
       /^01[016789]\d{7,8}$/.test(getPhone(doc)) &&
       !['accepted', 'unknown', 'sending'].includes(doc.send_status)
     );
     if (!eligible.length) return toast('발송 가능한 항목이 없습니다. 차량번호·연락처·이미지와 기존 발송 상태를 확인하세요.');
-    if (!window.confirm((selectedOnly ? '선택 항목 ' : '전체 목록 ') + '총 ' + eligible.length + '건을 CoolSMS로 실제 발송하시겠습니까?\n' +
+    if (!window.confirm((selectedOnly ? '선택 항목 ' : scopeName()+' ') + '총 ' + eligible.length + '건을 CoolSMS로 실제 발송하시겠습니까?\n' +
       '유료 발송이며 전송 중에는 창을 닫지 마세요.')) return;
     sending=true;
     let accepted = 0, failed = 0, unknown = 0;
