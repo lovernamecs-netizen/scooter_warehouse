@@ -25,8 +25,10 @@ def create_app(database=None):
         db.init();stop=threading.Event();thread=threading.Thread(target=scheduler,args=(db,stop),daemon=True);thread.start()
         from .vehicle_inventory import scheduler as inventory_scheduler
         inventory_thread=threading.Thread(target=inventory_scheduler,args=(db,stop),daemon=True);inventory_thread.start()
+        from .insurance_dispatch import scheduler as dispatch_scheduler
+        dispatch_thread=threading.Thread(target=dispatch_scheduler,args=(db,stop),daemon=True);dispatch_thread.start()
         try:yield
-        finally:stop.set();thread.join(timeout=2);inventory_thread.join(timeout=5)
+        finally:stop.set();thread.join(timeout=2);inventory_thread.join(timeout=5);dispatch_thread.join(timeout=2)
     app=FastAPI(title='Scooter Warehouse',version='1.0.31',lifespan=lifespan)
     app.state.db=db
     from .errors import install

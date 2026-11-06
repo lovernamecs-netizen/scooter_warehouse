@@ -155,6 +155,11 @@ def restore(path,destination,confirm=False):
    if library:
     cfg=json.loads(library[0]);cfg['roots']={k:str(dest/'insurance'/k) for k in cfg['roots']}
     con.execute("UPDATE settings SET value=? WHERE key='insurance_library_storage'",(json.dumps(cfg),))
+   # Restored queue may predate successful sends on the original server: NEVER replay it.
+   if con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='insurance_dispatches'").fetchone():
+    con.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('libresms_restore_hold',?)",(json.dumps({'held':True}),))
+    con.execute("UPDATE insurance_dispatches SET state='unknown',payload='',note='복구본의 이전 요청: 실제 발송 여부 확인 필요' WHERE provider='libresms' AND state IN ('queued','processing')")
+    con.execute("UPDATE insurance_sends SET state='unknown' WHERE id IN (SELECT id FROM insurance_dispatches WHERE provider='libresms' AND state='unknown')")
    # Restored credentials must not retain live sessions from a backup.
    con.execute('DELETE FROM sessions');con.commit()
   os.replace(tmp,dest)

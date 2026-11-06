@@ -28,6 +28,10 @@ _settings_lock=threading.Lock()
 UNKNOWN={'state':'unknown','title':'발송 접수 여부를 확인해야 합니다.','action':'CoolSMS 콘솔에서 확인하기 전 다시 발송하지 마세요.','delivery_confirmed':False,'technical':{'code':'','detail':'전송 진행 중 또는 응답 미확인'}}
 
 def send(db,uid,data):
+    from . import insurance_dispatch as dispatch
+    provider=data.get('provider','coolsms')
+    if provider=='libresms':return dispatch.enqueue(db,uid,data)
+    if provider!='coolsms':raise InsuranceDocumentError('지원하지 않는 발송 방식입니다.')
     phone,plate,image,message=sms._validate(data)
     request_id=str(data.get('request_id',''))
     try:uuid.UUID(request_id)
@@ -36,8 +40,11 @@ def send(db,uid,data):
     digest=privacy.token(json.dumps([phone,plate,message,sender,hashlib.sha256(image).hexdigest()],ensure_ascii=False))
     day=datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
     fingerprint=day+':'+digest
-    detail={'plate':plate,'phone':phone,'sender':sender,'message':message,'result':UNKNOWN}
+    content_digest=dispatch.semantic(phone,plate,message,image)
+    detail={'plate':plate,'phone':phone,'sender':sender,'message':message,'provider':'coolsms','result':UNKNOWN}
     with db.transaction() as s:
+        prior,content_fingerprint=dispatch.previous(s,request_id,content_digest,'coolsms')
+        if prior:return prior
         existing=s.get(InsuranceSend,request_id)
         if existing and existing.digest!=digest:raise HTTPException(409,'다른 내용에 사용한 발송 요청 번호입니다.')
         existing=existing or s.scalar(select(InsuranceSend).where(InsuranceSend.digest==digest,InsuranceSend.state=='unknown').order_by(InsuranceSend.at.desc()).limit(1))
@@ -46,12 +53,14 @@ def send(db,uid,data):
             existing.fingerprint='failed:'+existing.id
             s.flush();existing=None
         if existing:return {**json.loads(privacy.decrypt(existing.encrypted_detail))['result'],'repeated_request':True}
+        s.add(dispatch.InsuranceDispatch(id=request_id,digest=content_digest,fingerprint=content_fingerprint,provider='coolsms',state='processing',payload='',created=__import__('time').time(),retry_at=0,note=''))
         s.add(InsuranceSend(id=request_id,fingerprint=fingerprint,digest=digest,actor_id=uid,state='unknown',encrypted_detail=privacy.encrypt(json.dumps(detail,ensure_ascii=False))))
         privacy.audit(s,type('Actor',(),{'id':uid})(),'INSURANCE_SEND_RESERVED',request_id)
     # No DB writer lock during provider I/O. A crash leaves an unknown reservation.
-    result=sms.send_one(data)
+    result={**sms.send_one(data),'provider':'coolsms'}
     detail['result']=result
     with db.transaction() as s:
+        job=s.get(dispatch.InsuranceDispatch,request_id);job.state=result['state']
         row=s.get(InsuranceSend,request_id);row.state=result['state'];row.encrypted_detail=privacy.encrypt(json.dumps(detail,ensure_ascii=False))
         privacy.audit(s,type('Actor',(),{'id':uid})(),'INSURANCE_SEND_'+result['state'].upper(),request_id)
     return result
@@ -123,6 +132,31 @@ def install(app,db,user):
         with _settings_lock:result=call(settings.save_template,p.get('msg_template',''))
         with db.transaction() as s:privacy.audit(s,type('Actor',(),{'id':uid})(),'INSURANCE_TEMPLATE_CHANGED')
         return result
+
+    @app.get('/api/insurance/libresms/settings')
+    def libre_settings(request:Request,device_id:str='phone1'):
+        from .insurance_libresms import config
+        access(request);return call(config,db,device_id)
+
+    @app.put('/api/insurance/libresms/settings')
+    def libre_config(p:dict,request:Request):
+        from .insurance_libresms import configure
+        return call(configure,db,access(request),p)
+
+    @app.post('/api/insurance/libresms/health')
+    def libre_health(request:Request,device_id:str='phone1'):
+        from .insurance_libresms import config,health
+        access(request);return health(call(config,db,device_id))
+
+    @app.get('/api/insurance/libresms/queue')
+    def libre_queue(request:Request):
+        from .insurance_dispatch import queue
+        access(request);return queue(db)
+
+    @app.post('/api/insurance/libresms/queue/{ident}/cancel')
+    def libre_cancel(ident:str,request:Request):
+        from .insurance_dispatch import cancel
+        return cancel(db,access(request),ident)
 
     @app.post('/api/insurance/mms/send')
     def dispatch(p:dict,request:Request):return call(send,db,access(request),p)

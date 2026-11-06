@@ -19,6 +19,7 @@ class Database:
                 dbapi.execute('PRAGMA journal_mode=WAL')
     def init(self,seed_catalog=True):
         from .insurance_api import InsuranceSend
+        from .insurance_dispatch import InsuranceDispatch
         from .insurance_library import InsuranceDocument,InsuranceDocumentSearch
         Base.metadata.create_all(self.engine)
         with self.transaction() as s:

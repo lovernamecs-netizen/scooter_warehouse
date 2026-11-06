@@ -161,6 +161,8 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
       const phone = doc.manualPhone ? doc.phone : (contacts[doc.plate] || doc.phone || '');
       const state = doc.send_status === 'accepted' ? '발송 요청 접수' :
         doc.send_status === 'sending' ? '발송 요청 중' :
+        doc.send_status === 'queued' ? '서버 발송 대기' :
+        doc.send_status === 'processing' ? '전용폰 처리 중' :
         doc.send_status === 'failed' ? '발송 실패' :
         doc.send_status === 'unknown' ? '접수 여부 확인 필요' :
         !doc.within_limit ? '용량 초과 · 발송 보류' :
@@ -170,17 +172,17 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
         '<td><input type="checkbox" data-insurance-select="' + index + '" ' + (selected.has(index) ? 'checked' : '') + ' aria-label="발송 항목 선택"></td>' +
         '<td><strong>' + esc(doc.source) + '</strong>' + (doc.source_path?'<small>'+esc(doc.source_path)+'</small>':'') + '<br><small>' + doc.page + '페이지</small></td>' +
         '<td><input class="insurance-plate" data-insurance-plate="' + index + '" aria-label="차량번호 수정" value="' + esc(doc.plate) + '" ' +
-        (['accepted','unknown','sending'].includes(doc.send_status) ? 'disabled' : '') + '>' +
+        (['accepted','unknown','sending','queued','processing'].includes(doc.send_status) ? 'disabled' : '') + '>' +
         '<small>' + esc(doc.reason || 'PDF 차량번호 항목에서 추출') + '</small>' +
         (doc.review_required ? '<button type="button" data-insurance="confirm" data-index="' + index + '">원본 확인 완료</button>' : '') + '</td>' +
         '<td><input data-insurance-phone="' + index + '" aria-label="연락처 수정" value="' + esc(phone) + '" placeholder="01012345678" ' +
-        (['accepted','unknown','sending'].includes(doc.send_status) ? 'disabled' : '') + '></td>' +
+        (['accepted','unknown','sending','queued','processing'].includes(doc.send_status) ? 'disabled' : '') + '></td>' +
         '<td><strong>' + Math.ceil(doc.size_bytes / 1024) + 'KB</strong><br><small>' + esc(state) + '</small>' +
         (!doc.within_limit ? '<small class="insurance-warning">' + esc(doc.warning) + '</small>' : '') + '</td>' +
         '<td><button type="button" data-insurance="preview" data-index="' + index + '">미리보기</button> ' +
         '<button type="button" data-insurance="download" data-index="' + index + '" '+(doc.within_limit?'':'disabled')+'>JPG 저장</button></td>' +
         '<td><button type="button" data-insurance="send" data-index="' + index + '" class="primary" ' +
-        (doc.within_limit && !doc.review_required && isPhone(phone) && !['accepted','unknown','sending'].includes(doc.send_status) ? '' : 'disabled') +
+        (doc.within_limit && !doc.review_required && isPhone(phone) && !['accepted','unknown','sending','queued','processing'].includes(doc.send_status) ? '' : 'disabled') +
         '>개별 MMS 발송</button><small>' + esc(state) + '</small>' +
         (doc.send_error ? '<details><summary>실패 이유 · 상세 코드</summary><strong>' + esc(doc.send_error.title || '확인 필요') + '</strong><p>' +
         esc(doc.send_error.action || '') + '</p><pre>' + esc('코드: ' + (doc.send_error.technical?.code || '미제공') +
@@ -195,7 +197,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     el('[data-insurance=zip]').textContent=searchTerm?'검색 결과 검증 JPG ZIP':'검증된 JPG 일괄 ZIP';
     const allSend=el('[data-mms=send-all]');if(allSend)allSend.textContent=searchTerm?'검색 결과 일괄 MMS 발송':'전체 목록 일괄 MMS 발송';
     summary();
-    container.querySelectorAll("input,textarea,button").forEach(x=>{if(x.closest('#insurance-library-mount'))return;if(isInsuranceBusy())x.disabled=true;else if(x.dataset.insurance!=='send'&&x.dataset.insurance!=='download'&&x.dataset.insurancePlate===undefined&&x.dataset.insurancePhone===undefined)x.disabled=false;});
+    container.querySelectorAll("input,textarea,button,select").forEach(x=>{if(x.closest('#insurance-library-mount'))return;if(isInsuranceBusy())x.disabled=true;else if(x.dataset.insurance!=='send'&&x.dataset.insurance!=='download'&&x.dataset.insurancePlate===undefined&&x.dataset.insurancePhone===undefined)x.disabled=false;});
   };
   const fileName = (doc, index) => {
     const base = doc.plate || ('미인식_p' + doc.page);
@@ -344,7 +346,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
       doc.manualPhone = true;
       refresh();
     }
-    } finally {if(importing){loading--;container.querySelectorAll('input,textarea,button').forEach(x=>x.disabled=false);refresh();}}
+    } finally {if(importing){loading--;container.querySelectorAll('input,textarea,button,select').forEach(x=>x.disabled=false);refresh();}}
   });
   container.addEventListener('click', async event => {
     const b = event.target.closest('[data-insurance]');
@@ -356,7 +358,7 @@ export function renderInsuranceTool(container, {api, toast, esc, role, previewDa
     } else if (action === 'history') {
       try {
         const rows=await api('/insurance/mms/history');
-        el('#insurance-history').innerHTML='<div class="table-wrap"><table><thead><tr><th>시간</th><th>계정</th><th>차량번호</th><th>수신번호</th><th>접수 상태</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.at.replace('T',' ').slice(0,19)+' UTC')+'</td><td>'+esc(row.actor)+'</td><td>'+esc(row.plate)+'</td><td>'+esc(row.phone)+'</td><td>'+esc({accepted:'접수 완료',failed:'실패',unknown:'확인 필요'}[row.state]||row.state)+'</td></tr>').join('')+'</tbody></table></div>';
+        el('#insurance-history').innerHTML='<div class="table-wrap"><table><thead><tr><th>시간</th><th>계정</th><th>발송 방식</th><th>차량번호</th><th>수신번호</th><th>접수 상태</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.at.replace('T',' ').slice(0,19)+' UTC')+'</td><td>'+esc(row.actor)+'</td><td>'+esc(row.provider==='libresms'?'LibreSMS 전용폰':'CoolSMS')+'</td><td>'+esc(row.plate)+'</td><td>'+esc(row.phone)+'</td><td>'+esc({accepted:'접수 완료',failed:'실패',unknown:'확인 필요',queued:'대기',processing:'처리 중',cancelled:'취소'}[row.state]||row.state)+'</td></tr>').join('')+'</tbody></table></div>';
       } catch(error){toast(error.message);}
     } else if (action === 'send') {
       await sender?.sendOne(index);
