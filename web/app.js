@@ -1,3 +1,4 @@
+import {rememberLoginField, fillRememberedLogin, saveSuccessfulLogin} from './pc-login.js';
 import {renderInsuranceTool,clearInsuranceTool,isInsuranceBusy} from './insurance-tool.js';
 import {isInsuranceSending} from './insurance-sender.js';
 import {renderDispatchCalendar} from './dispatch-calendar.js?v=20261102-selected-outbound-v1';
@@ -86,10 +87,11 @@ function modal(title,html,footer=''){const m=$('#modal');document.body.classList
 function err(e){showError(e)}
 function formData(){return Object.fromEntries(new FormData($('#modal form')).entries())}
 async function acceptLogin(value){token=value;sessionStorage.setItem('warehouseToken',token);try{await refresh(true);selectedDay=S.today;render();}catch(e){token='';S=null;sessionStorage.removeItem('warehouseToken');window.WarehouseNative?.setUploadSession?.('','');throw e;}}
-function renderLogin(){ clearInsuranceTool();$('#app').innerHTML=`<div class="login-screen"><div class="login panel"><div class="brand">Scooter<br>Warehouse</div><h2>로그인</h2><form id="login"><label>아이디</label><input name="username" autocomplete="username" required><label>비밀번호</label><input name="password" type="password" autocomplete="current-password" required>${biometricFields()}<button class="primary" type="submit">로그인</button><p id="login-error" class="error-page" role="alert"></p></form></div></div>`;
+function renderLogin(){ clearInsuranceTool();$('#app').innerHTML=`<div class="login-screen"><div class="login panel"><div class="brand">Scooter<br>Warehouse</div><h2>로그인</h2><form id="login" method="post" autocomplete="on"><label for="login-user">아이디</label><input id="login-user" name="username" autocomplete="username" required><label for="login-password">비밀번호</label><input id="login-password" name="password" type="password" autocomplete="current-password" required>${rememberLoginField()}${biometricFields()}<button class="primary" type="submit">로그인</button><p id="login-error" class="error-page" role="alert"></p></form></div></div>`;
+ fillRememberedLogin($('#login'));
  bindBiometricLogin(acceptLogin,renderLogin);
  $('#login').onsubmit=async e=>{e.preventDefault();const form=e.target,submit=form.querySelector('[type=submit]');if(submit.disabled)return;submit.disabled=true;const credentials=Object.fromEntries(new FormData(form)),enabled=!!form.querySelector('#enable-biometric')?.checked;
- try{const r=await api('/login',{method:'POST',body:JSON.stringify(credentials)});form.querySelector('[name=password]').value='';let notice='';try{await enrollBiometric(credentials.username,credentials.password,enabled);}catch(err){notice=err.message;}credentials.password='';await acceptLogin(r.token);if(notice)toast(notice);}
+ try{const r=await api('/login',{method:'POST',body:JSON.stringify(credentials)});const remember=!!form.querySelector('#remember-login')?.checked;let notice='';try{await enrollBiometric(credentials.username,credentials.password,enabled);}catch(err){notice=err.message;}await acceptLogin(r.token);void saveSuccessfulLogin(credentials.username,credentials.password,remember);credentials.password='';form.elements.password.value='';if(notice)toast(notice);}
  catch(err){credentials.password='';const error=$('#login-error');if(error)error.textContent=err.message;}
  finally{submit.disabled=false;}
  };}
