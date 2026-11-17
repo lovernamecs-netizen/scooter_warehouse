@@ -248,3 +248,23 @@ dialog.parts-rules-dialog{width:min(1200px,96vw);max-width:96vw;max-height:94dvh
  .map-zoom-controls button{min-width:44px;min-height:44px;touch-action:manipulation}
  .map-zoom-controls output{min-width:4ch;text-align:center;font-variant-numeric:tabular-nums}
 }
+
+#compact-warehouse-toggle{display:none}
+#warehouse-tools{display:contents}
+@media (max-width:600px) and (any-pointer:coarse){
+ .page-head{flex-direction:column;align-items:stretch;gap:8px;margin-bottom:12px}
+ .page-head .eyebrow,.page-head>.actions:empty{display:none}
+ .page-head>.actions{max-width:100%;justify-content:flex-start;flex-wrap:wrap}
+ .page-head .actions button{min-height:44px}
+ .page-head p{font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+ .warehouse-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:6px 12px;padding:10px;margin-bottom:8px}
+ .warehouse-bar label{min-width:0;grid-column:1}
+ .warehouse-bar strong{grid-column:1/-1;font-size:12px}
+ #compact-warehouse-toggle{display:block;grid-row:1;grid-column:2;min-height:44px}
+ #warehouse-tools{display:none;grid-column:1/-1}
+ #compact-warehouse-toggle[aria-expanded=true]~#warehouse-tools{display:flex;gap:6px;flex-wrap:wrap}
+ #warehouse-tools button,.bottom-nav button{min-height:44px}
+ .bottom-nav button{flex:1;min-width:0;white-space:nowrap;padding-inline:2px}
+ .map-assignment-legend{column-gap:6px}
+ .map-assignment-legend>span:last-child{flex-basis:100%}
+}

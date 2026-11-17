@@ -29,7 +29,11 @@ try:
   expect(plus).to_be_disabled()
   expect(viewport).to_have_attribute('data-map-zoom','1.6')
   slot=page.locator('.slot[data-vehicle]:not([data-vehicle=""])').first
-  slot.click();expect(page.locator('#modal')).to_be_visible();page.locator('[data-act=close]').click()
+  page.set_viewport_size({'width':390,'height':844})
+  slot.tap();expect(page.locator('#modal')).to_be_visible()
+  assert page.locator('#modal').evaluate('(dialog)=>dialog.scrollWidth<=dialog.clientWidth+1')
+  page.locator('[data-act=close]').click()
+  page.set_viewport_size({'width':1000,'height':900})
   slot.scroll_into_view_if_needed();box=slot.bounding_box();cdp_hold=page.context.new_cdp_session(page)
   cdp_hold.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'id':1,'x':box['x']+box['width']/2,'y':box['y']+box['height']/2}]});page.wait_for_timeout(2100);cdp_hold.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
   expect(page.locator('[data-act=cancel-move]')).to_be_visible();page.wait_for_timeout(500);page.locator('[data-act=cancel-move]').click()
