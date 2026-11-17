@@ -240,3 +240,11 @@ dialog.parts-rules-dialog{width:min(1200px,96vw);max-width:96vw;max-height:94dvh
 /* Login stays centered at every saved touch UI scale; short screens scroll. */
 .login-screen{display:flex;min-height:calc(100vh / var(--ui-scale,1));min-height:calc(100dvh / var(--ui-scale,1));padding:20px;width:100%}
 .login-screen>.login{flex:none;width:min(420px,100%);max-width:100%;margin:auto}
+
+.map-zoom-controls{display:none}
+.map-scaled-layer{overflow:clip}
+@media(any-pointer:coarse){
+ .map-zoom-controls{display:inline-flex;align-items:center;gap:4px}
+ .map-zoom-controls button{min-width:44px;min-height:44px;touch-action:manipulation}
+ .map-zoom-controls output{min-width:4ch;text-align:center;font-variant-numeric:tabular-nums}
+}

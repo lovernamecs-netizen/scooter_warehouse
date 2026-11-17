@@ -18,7 +18,16 @@ try:
   browser=pw.chromium.launch(executable_path=CHROME,headless=True);page=browser.new_page(viewport={'width':1000,'height':900},has_touch=True);errors=observe(page,'map-navigation-mode')
   page.goto(r[3]);page.evaluate('(t)=>sessionStorage.setItem("warehouseToken",t)',token);page.reload();nav(page,'map')
   expect(page.locator('[data-act=map-pan-mode]')).to_have_count(0)
-  expect(page.locator('[data-act=zoom]')).to_have_count(0)
+  viewport=page.locator('.map-viewport')
+  plus=page.get_by_role('button',name='지도 확대');minus=page.get_by_role('button',name='지도 축소')
+  expect(plus).to_be_visible()
+  plus.tap();expect(viewport).to_have_attribute('data-map-zoom','0.9')
+  minus.tap();expect(viewport).to_have_attribute('data-map-zoom','0.8')
+  for _ in range(4):minus.tap()
+  expect(minus).to_be_disabled()
+  for _ in range(12):plus.tap()
+  expect(plus).to_be_disabled()
+  expect(viewport).to_have_attribute('data-map-zoom','1.6')
   slot=page.locator('.slot[data-vehicle]:not([data-vehicle=""])').first
   slot.click();expect(page.locator('#modal')).to_be_visible();page.locator('[data-act=close]').click()
   slot.scroll_into_view_if_needed();box=slot.bounding_box();cdp_hold=page.context.new_cdp_session(page)
@@ -40,5 +49,5 @@ try:
   assert business()==before
   assert not errors['pageerror'],errors
   browser.close()
- print('PASS no mode/zoom controls, card selection/2-second hold, blank one-finger/mouse pan, no pinch zoom, cancellation, unchanged business data')
+ print('PASS bounded map zoom buttons, card selection/2-second hold, blank one-finger/mouse pan, no pinch zoom, cancellation, unchanged business data')
 finally:stop(r)
