@@ -95,6 +95,13 @@ def create_app(database=None):
     def used_page(vehicle_id:str,request:Request,stay_id:str|None=None):
         from .used_stock import page
         with db.transaction() as s:return page(s,user(s,request),vehicle_id,stay_id)
+    @app.get('/api/used/{vehicle_id}/cover')
+    def used_card_cover(vehicle_id:str, stay_id:str, request:Request):
+        from .used_stock import card_cover
+        with db.read() as session:
+            raw, mime = card_cover(session, user(session,request), vehicle_id, stay_id)
+        return Response(raw, status_code=200 if raw else 204, media_type=mime, headers={'Cache-Control':'no-store'})
+
     @app.get('/api/used/{vehicle_id}/photos/{photo_id}')
     def used_photo_download(vehicle_id:str,photo_id:str,request:Request,preview:bool=False,stay_id:str|None=None):
         from .used_stock import media_download

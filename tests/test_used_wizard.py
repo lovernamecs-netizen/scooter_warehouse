@@ -51,3 +51,31 @@ def test_ocr_requires_permission_and_reports_missing_engine(env):
  with patch('server.vin_ocr.Path.is_file',return_value=False):
   r=c.post('/api/vin/ocr',headers=h,json={'image':base64.b64encode(png()).decode()});assert r.status_code==503
  assert c.post('/api/vin/ocr',json={'image':''}).status_code==401
+
+def test_card_cover_uses_exterior_from_requested_stay(env):
+ db,c,h,cmd,state,receive,v,vc,*_=env
+ one=receive('USED');two=receive('USED')
+ url='/api/used/'+one+'/cover?stay_id='+v(one)['stay_id']
+ def add(category,key,color):
+  out=io.BytesIO();Image.new('RGB',(32,24),color).save(out,'PNG');raw=out.getvalue()
+  encoded=base64.b64encode(raw).decode()
+  vc('used_media',one,{'category':category,'key':key,'original':encoded,'preview':encoded})
+  media=c.get('/api/used/'+one,headers=h).json()['media']
+  photo=next(x for x in media if x['category']==category and x['key']==key)
+  return c.get('/api/used/'+one+'/photos/'+photo['id']+'?preview=true',headers=h).content
+ assert c.get(url).status_code==401
+ add('intake','plate','red')
+ assert c.get(url,headers=h).status_code==204
+ side=add('product','front','blue')
+ assert c.get(url,headers=h).content==side
+ whole=add('intake','whole','green')
+ assert c.get(url,headers=h).content==whole
+ assert c.get(url.replace('/'+one+'/', '/'+two+'/'),headers=h).status_code==404
+
+def test_complete_without_consumable_inspection(env):
+ db,c,h,cmd,state,receive,v,vc,*_=env
+ vehicle=receive('USED')
+ vc('used_profile',vehicle,{'profile':{'oil_changed':False,'equipment_checked':False,'repairs_done':False},'complete':True})
+ detail=c.get('/api/used/'+vehicle,headers=h).json()
+ assert detail['ready']
+ assert not any(term in label for term in ('패드','타이어','엔진오일') for label in detail['missing'])

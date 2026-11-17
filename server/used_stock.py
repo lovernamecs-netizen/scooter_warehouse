@@ -10,9 +10,8 @@ def read(s,st):
  row=s.get(Setting,'used_profile:'+st.id) if st else None
  return dict(row.value) if row else {}
 def missing(p):
- labels={'mileage':'주행거리','exterior':'외장 컨디션','pad_front':'앞 패드 잔량','pad_rear':'뒤 패드 잔량','tire_front':'앞 타이어 잔량','tire_rear':'뒤 타이어 잔량'}
+ labels={'mileage':'주행거리','exterior':'외장 컨디션'}
  out=[label for key,label in labels.items() if p.get(key) is None or p.get(key)=='']
- if not p.get('oil_changed') or not p.get('oil_date'):out.append('엔진오일 교환 및 교환일')
  if not p.get('equipment_checked'):out.append('기존 장착품 확인')
  if not p.get('repairs_done'):out.append('필요 보수작업 완료 확인')
  if p.get('washed') is False:out.append('세차 완료')
@@ -116,6 +115,30 @@ def decode_image(encoded,limit=25000000):
  except Exception:need(False,'사진 형식 오류')
  mime='image/jpeg' if raw.startswith(b'\xff\xd8\xff') and raw.endswith(b'\xff\xd9') else 'image/png' if raw.startswith(b'\x89PNG\r\n\x1a\n') else 'image/webp' if raw[:4]==b'RIFF' and raw[8:12]==b'WEBP' else ''
  need(mime and len(raw)<=limit,'JPG, PNG 또는 WebP 사진을 선택하세요.');return raw,mime
+
+def card_cover(s, user, vehicle_id, stay_id):
+ from .domain import get, need
+ need(user.role != 'ubis', '권한이 없습니다.', 403)
+ vehicle = get(s, Vehicle, vehicle_id)
+ current = get(s, Stay, stay_id)
+ need(vehicle.kind == 'USED' and current.vehicle_id == vehicle.id, '중고차 입고 회차를 확인하세요.', 404)
+ prefix = 'used_media:' + stay_id + ':'
+ priority = [('intake','whole')] + [(category,side) for category in ('product','intake') for side in ('left','right','front','rear')]
+ candidates = []
+ for row in s.scalars(select(Setting).where(Setting.key >= prefix, Setting.key < prefix[:-1]+';')):
+  media = row.value
+  view = (media.get('category'), media.get('key'))
+  if not media.get('deleted_at') and view in priority:
+   candidates.append((-priority.index(view), media.get('at',''), media['id']))
+ if candidates:
+  photo_id = max(candidates)[2]
+  raw, mime, _ = media_download(s,user,vehicle_id,photo_id=photo_id,preview=True,stay_id=stay_id)
+  return raw, mime
+ for view in ('perspective','left','right','front','rear'):
+  old = s.get(Setting, 'used_photo:'+stay_id+':'+view)
+  if old:
+   return decode_image(old.value['jpeg'])
+ return None, None
 
 def media_download(s,u,ident,photo_id=None,category=None,preview=False,stay_id=None):
  import io,zipfile

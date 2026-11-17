@@ -268,3 +268,33 @@ dialog.parts-rules-dialog{width:min(1200px,96vw);max-width:96vw;max-height:94dvh
  .map-assignment-legend{column-gap:6px}
  .map-assignment-legend>span:last-child{flex-basis:100%}
 }
+
+.used-stock-cards {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 285px), 1fr));
+}
+.used-stock-cards .used-vehicle-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: 5px;
+  border: 1px solid #aec9c6;
+  border-radius: 16px;
+  background: #f5faf9;
+}
+used-card-cover {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 11px;
+  background: #e4edeb;
+  color: #465e59;
+  font-size: .85rem;
+}
+used-card-cover img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.used-card-body { padding: 15px 12px 10px; }
+.used-card-body h2 { font-size: 1.35rem; line-height: 1.25; overflow-wrap: anywhere; }
+.used-card-body p { margin: 8px 0; }
+.used-card-vin { color: #485c65; font-size: .8rem; overflow-wrap: anywhere; }
+.used-consumables { border-block: 1px solid #d6e2df; margin-bottom: 12px; }
+.used-consumables summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
