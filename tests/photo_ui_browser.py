@@ -86,7 +86,7 @@ try:
   previous_url=page.url;drop('#modal .modal-head',[f()]);assert page.url==previous_url
   page.wait_for_timeout(400);page.locator('[data-act=used-step][data-step="2"]').first.click();expect(page.locator('.part-hotspot')).to_have_count(13)
   page.locator('.part-hotspot[data-key=front]').click();page.locator('#damage-note').fill('카울 흠집 메모');page.locator('#damage-status').select_option('damaged')
-  drop('.damage-inline',[f('damage1.jpg'),f('damage2.jpg')]);expect(page.locator('.damage-inline [data-media]')).to_have_count(2)
+  drop('.damage-inline',[f('damage1.jpg'),f('damage2.jpg')]);expect(page.locator('.damage-inline [data-media]:not([data-media^="pending-"])')).to_have_count(2)
   assert page.locator('#damage-note').input_value()=='카울 흠집 메모'
   page.screenshot(path=str(OUT/'damage-desktop.png'))
   for key in ['headlight','shield','mirror','handle','floor','seat','rear','left','right','exhaust','front_fender','rear_fender']:

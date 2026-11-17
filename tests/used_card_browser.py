@@ -44,6 +44,43 @@ try:
             options.locator('summary').click()
             expect(options.locator('[name=pad_front]')).to_have_value('0')
             expect(options.locator('[name=oil_changed]')).to_be_checked()
+            page.locator('[data-act=used-step][data-step="1"]').first.click()
+            page.evaluate("""() => {
+                window.WarehouseNative = {capturePhoto: m => {window.captureTarget = JSON.parse(m); document.body.dataset.captureKey=window.captureTarget.key;}, photoJobs: () => {}};
+            }""")
+            for key in ('plate', 'whole'):
+                tile = page.locator('.used-photo-tile[data-category=intake][data-key="'+key+'"]')
+                tile.locator('.photo-tile-add').click()
+                panel = page.locator('dialog.used-photo-dialog')
+                panel.locator('[data-p=camera]').click()
+                expect(page.locator('body')).to_have_attribute('data-capture-key', key)
+                target = page.evaluate('window.captureTarget')
+                assert target['vehicle_id'] == vid and target['category'] == 'intake'
+                job = dict(target, id=str(uuid.uuid4()), status='pending', preview='data:image/png;base64,'+encoded)
+                page.evaluate('(job) => window.onPhotoJobs([job])', job)
+                preview = panel.locator('.used-capture-preview')
+                expect(preview).to_be_visible()
+                assert preview.evaluate('img => img.decode().then(() => img.naturalWidth)') == 480
+                expect(tile.locator('.used-capture-preview')).to_have_attribute('src', job['preview'])
+                saved = client.post('/api/used/'+vid+'/upload', data=dict(upload_id=job['id'], stay_id=target['stay_id'], category='intake', key=key), files={'file': ('capture.png', image.getvalue(), 'image/png')})
+                saved.raise_for_status()
+                page.evaluate('(job) => window.onPhotoJobs([job])', dict(job,status='saved'))
+                expect(panel.locator('[data-media="'+job['id']+'"]')).to_be_visible()
+                expect(tile.locator('[data-media="'+job['id']+'"]')).to_be_visible()
+                panel.locator('[data-p=close]').first.click()
+                page.evaluate('window.onPhotoJobs([])')
+            page.once('dialog', lambda dialog: dialog.accept())
+            page.locator('#modal .modal-head [data-act=close]').click()
+            page.locator('[data-act=receipt]').first.click()
+            tile = page.locator('.used-photo-tile[data-category=intake][data-key=plate]')
+            tile.locator('.photo-tile-add').click()
+            panel = page.locator('dialog.used-photo-dialog')
+            with page.expect_file_chooser() as chooser:
+                panel.locator('[data-p=camera]').click()
+            assert chooser.value.element.get_attribute('capture') == 'environment'
+            chooser.value.set_files(dict(name='plate.png', mimeType='image/png', buffer=image.getvalue()))
+            expect(panel.locator('img[data-media^="pending-"]')).to_be_visible()
+            expect(tile.locator('img[data-media^="pending-"]')).to_be_visible()
             browser.close()
 finally:
     stop(runtime)
