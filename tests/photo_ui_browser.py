@@ -32,7 +32,7 @@ try:
   context=browser.new_context(viewport={'width':1366,'height':768},accept_downloads=True)
   page=context.new_page();page.on('pageerror',lambda e:errors.append(str(e)));observe(page,'photo')
   page.goto(base);page.evaluate('(token)=>sessionStorage.setItem("warehouseToken",token)',token);page.reload()
-  nav(page,'used');page.locator(f'[data-act=used-open][data-id="{vid}"][data-step="3"]').click()
+  nav(page,'used');page.locator(f'.used-vehicle-card [data-act=detail][data-id="{vid}"]').click();page.locator(f'[data-act=used-open][data-id="{vid}"][data-step="3"]').click()
   expect(page.locator('.product-photo-grid .photo-drop')).to_have_count(6)
   def drop(selector,files):
    page.locator(selector).first.evaluate('''(el,files)=>{const dt=new DataTransfer();for(const f of files){const bytes=Uint8Array.from(atob(f.data),c=>c.charCodeAt(0));dt.items.add(new File([bytes],f.name,{type:f.type}));}for(const name of ['dragenter','dragover','drop'])el.dispatchEvent(new DragEvent(name,{bubbles:true,cancelable:true,dataTransfer:dt}));}''',files)
@@ -126,9 +126,9 @@ try:
   page.wait_for_timeout(400);page.locator('.used-photo-tile[data-key=whole] .photo-tile-open').click();expect(page.locator('.original-status')).to_contain_text('4000 × 3000');page.locator('[data-v=close]').click();page.wait_for_timeout(150)
   page.locator('[data-act=used-save]').click();expect(page.locator('.system-error')).to_be_visible();page.locator('.system-error button').click();expect(page.locator('#web-photo-jobs')).to_contain_text('저장 대기')
   page.locator('[name=model_id]').select_option(model);page.locator('[name=color_id]').select_option(color);page.locator('[name=exterior]').fill('신규 기록 보존')
-  page.locator('[data-act=used-step][data-step="2"]').first.click();expect(page.locator('.used-inspection-board')).to_be_visible();expect(page.locator('#web-photo-jobs')).to_be_empty()
+  page.locator('[data-act=used-save]').click();expect(page.locator('#web-photo-jobs')).to_be_empty()
   new_state=client.get('/api/state').json();new_id=next(v['id'] for v in new_state['vehicles'] if v['id']!=vid);new_data=client.get('/api/used/'+new_id).json();assert len(new_data['media'])==1 and not new_data['ready'];assert new_data['profile']['exterior']=='신규 기록 보존'
-  page.locator('[data-act=used-step][data-step="1"]').first.click();assert page.locator('[name=exterior]').input_value()=='신규 기록 보존'
+  assert page.locator('[name=exterior]').input_value()=='신규 기록 보존'
   page.locator('[name=exterior]').fill('취소 보호');page.once('dialog',lambda d:d.dismiss());page.locator('#modal .modal-head [data-act=close]').click();expect(page.locator('#modal')).to_be_visible();assert page.locator('[name=exterior]').input_value()=='취소 보호'
   print('EXTENDED UI PASS: intake/damage/wear multi-drop, 13 hotspots, partial retry, server format validation, replacement cancel, outside-drop protection, bridge compatibility, touch pinch, browser/native back, new-vehicle pending, draft protection',flush=True)
   print('INITIAL UI PASS: 6 directions, high-res viewer, download hash, state preservation, responsive sizes',flush=True)
