@@ -100,3 +100,16 @@ def test_used_card_delete_owner_only_preserves_history_and_profile(env):
   assert session.get(Setting,'used_profile:'+st).value==saved
  history=c.get('/api/history/'+ident,headers=h).json();assert history[-1]['event']=='DELETED'
  assert not any(x['vehicle_id']==ident for x in c.get('/api/outbound',headers=h).json())
+
+def test_used_stock_without_placement(env):
+ db,c,h,cmd,state,receive,v,vc,z,opt,item,*_=env
+ used=receive('USED')
+ new=receive('NEW')
+ assert v(used)['state']=='재고' and v(used)['location'] is None
+ assert v(new)['state']!='재고' and v(new)['location'] is None
+ vc('ubis',used,{'status':'INSTALLED'})
+ assert v(used)['state']=='재고'
+ vc('move',used,{'slot_id':z['slots'][0]['id']})
+ assert v(used)['state']=='재고' and v(used)['location']
+ vc('assign',used,{'scheduled':state()['today']})
+ assert v(used)['state']=='작업대기'
