@@ -171,7 +171,44 @@ customElements.define('used-card-cover', class extends HTMLElement {
   } catch { if(this.isConnected)this.textContent='차량 사진을 불러올 수 없습니다'; }
  }
 });
-function usedPage(){const vs=sortInventory(filtered(),stockSort);return head('중고차 상품화','',S.user.role==='admin'||S.user.role==='worker'?button('중고차 입고','receipt','','primary'):'')+`<p class="notice">현재 중고 재고 ${vs.length}대 · 상품화 완료 ${vs.filter(v=>v.used_stock?.ready).length}대 · 진행/미등록 ${vs.filter(v=>!v.used_stock?.ready).length}대</p><div class="used-stock-cards">${vs.map(v=>`<article class="panel used-vehicle-card"><used-card-cover data-vehicle="${esc(v.id)}" data-stay="${esc(v.stay_id)}">차량 전체 사진 미등록</used-card-cover><div class="used-card-body"><div class="split"><h2 class="${v.plate?'used-plate':''}">${esc(v.plate||'번호판 미등록')}</h2>${badge(v.used_stock?.status||'점검 미등록')}</div><p><strong>${esc(v.model)}</strong> · ${esc(v.color)} · ${v.used_stock?.mileage==null?'주행거리 미등록':Number(v.used_stock.mileage).toLocaleString()+' km'}</p><small class="used-card-vin">${v.vin?'차대번호 '+esc(v.vin):'차대번호 미등록'+(v.reference?' · '+esc(v.reference):'')}</small><p class="hint">${esc(place(v))}</p><div class="actions">${button('입고 기록','used-open',`data-id="${v.id}"`,'primary')}${button('차량·출고','detail',`data-id="${v.id}"`)}${S.user.security_owner?button('카드 삭제','delete-vehicle',`data-id="${v.id}"`,'danger'):''}</div></div></article>`).join('')||'<div class="empty">등록된 중고 재고가 없습니다.</div>'}</div>`}
+const _thumbCache=new Map();
+async function _hydrateUsedCardThumbs(){
+  const boxes=[...document.querySelectorAll('.used-card-photo-box[data-id]')];
+  await Promise.allSettled(boxes.map(async box=>{
+    const vid=box.dataset.id,sid=box.dataset.stayId||'',hint=box.dataset.thumbId||'';
+    const img=box.querySelector('img.used-card-hero-img');
+    const empty=box.querySelector('.used-card-photo-empty');
+    if(!img||!vid)return;
+    const cacheKey=vid+':'+sid+':'+hint;
+    if(_thumbCache.has(cacheKey)&&img.dataset.loadedKey===cacheKey)return;
+    if(_thumbCache.has(cacheKey)){
+      img.src=_thumbCache.get(cacheKey);img.dataset.loadedKey=cacheKey;img.hidden=false;if(empty)empty.hidden=true;return;
+    }
+    try{
+      let thumbId=hint,stayId=sid,legacyJpeg=null;
+      if(!thumbId||thumbId.startsWith('legacy:')){
+        const d=await api('/used/'+vid);
+        stayId=d.stay_id||stayId;
+        const media=d.media||[];
+        const whole=media.filter(m=>m.category==='intake'&&m.key==='whole').at(-1);
+        const front=media.filter(m=>m.key==='front').at(-1);
+        const picked=whole||front||media.at(-1);
+        if(picked?.id)thumbId=picked.id;
+        else if(d.photos){const firstKey=Object.keys(d.photos)[0];if(firstKey)legacyJpeg=d.photos[firstKey]?.jpeg;}
+      }
+      if(legacyJpeg){
+        const dataUrl='data:image/jpeg;base64,'+legacyJpeg;
+        _thumbCache.set(cacheKey,dataUrl);img.src=dataUrl;img.dataset.loadedKey=cacheKey;img.hidden=false;if(empty)empty.hidden=true;return;
+      }
+      if(!thumbId)return;
+      const blob=await api('/used/'+vid+'/photos/'+thumbId+'?stay_id='+encodeURIComponent(stayId)+'&preview=true',{blob:true});
+      const url=URL.createObjectURL(blob);
+      _thumbCache.set(cacheKey,url);
+      if(img.isConnected){img.src=url;img.dataset.loadedKey=cacheKey;img.hidden=false;if(empty)empty.hidden=true;}
+    }catch{}
+  }));
+}
+function usedPage(){const vs=sortInventory(filtered(),stockSort);setTimeout(_hydrateUsedCardThumbs,20);return head('중고차 상품화','차량 상태 사진 · 차종 · 번호판 · 3대 점검 간편 관리',S.user.role==='admin'||S.user.role==='worker'?button('중고차 입고','receipt','','primary'):'')+`<p class="notice">현재 중고 재고 ${vs.length}대 · 상품화 완료 ${vs.filter(v=>v.used_stock?.ready).length}대 · 진행/미등록 ${vs.filter(v=>!v.used_stock?.ready).length}대</p><div class="used-stock-cards">${vs.map(v=>`<article class="panel used-card-simple"><div class="used-card-photo-box" data-act="used-open" data-id="${v.id}" data-stay-id="${esc(v.used_stock?.stay_id||v.stay_id||'')}" data-thumb-id="${esc(v.used_stock?.thumb_id||'')}" data-step="1"><img data-used-thumb="${esc(v.used_stock?.thumb_id||'')}" data-vehicle-id="${esc(v.id)}" data-stay-id="${esc(v.used_stock?.stay_id||v.stay_id||'')}" alt="${esc(v.model)} 상태 사진" class="used-card-hero-img" hidden><div class="used-card-photo-empty">📷 차량 전체 사진 불러오는 중 / 클릭하여 등록</div><div class="used-card-float-badge">${badge(v.used_stock?.status||'점검 미등록')}</div></div><div class="used-card-body"><div class="used-model-xl">${esc(v.model)}</div><div class="used-plate-xl ${v.plate?'':'unregistered'}">${esc(v.plate||'번호판 미등록')}</div><p><strong>${esc(v.color||'색상 미등록')}</strong> · ${v.used_stock?.mileage==null?'주행거리 미등록':Number(v.used_stock.mileage).toLocaleString()+' km'}</p><div class="used-vin-readable mono">차대번호(VIN): ${esc(v.vin||'미등록')}</div></div><div class="actions used-card-footer">${button('상품화 점검 열기','used-open',`data-id="${v.id}" data-step="1"`,'primary')}${button('차량 상세','detail',`data-id="${v.id}"`)}</div></article>`).join('')}</div>`}
 function manufactureBadge(v){return `<span class="manufacture-badge ${v.manufactured_month?'':'unknown'}"><span>제조</span> <strong>${esc(v.manufactured_month||'미확인')}</strong></span>`}
 function vehicleTable(vs){if(!vs.length)return '<div class="empty">해당 차량이 없습니다.<br>입고등록 또는 검색 조건을 확인하세요.</div>';return `<div class="table-wrap desktop-only"><table><thead><tr><th>차량 / VIN</th>${page==='work'?'<th>업체·주문자</th>':''}<th>색상</th><th>제조년월 / 입고일</th><th>유비스</th><th>현재 위치</th><th>상태</th><th>출고예정</th></tr></thead><tbody>${vs.map(v=>`<tr class="selectable" data-act="detail" data-id="${v.id}"><td><div class="vehicle-name">${esc(v.model)} ${page==='work'?orderChannelBadge(v):''} ${v.kind==='USED'?'<span class="badge">중고</span>':''}</div><small class="mono">${esc(v.vin||v.reference+' · VIN 미등록')}</small></td>${page==='work'?`<td class="work-customer-cell">${orderCustomerHTML(v,S.user.customer_access,esc)}</td>`:''}<td><i class="swatch" style="background:${esc(v.color_hex)}"></i>${esc(v.color)}</td><td>${manufactureBadge(v)}<br><small>${fmt(v.received_at)}</small></td><td>${v.ubis==='INSTALLED'?'<span class="u">U</span>':'—'}</td><td>${esc(place(v))}</td><td>${badge(v.state)}</td><td>${esc(v.assignment?.scheduled||'—')}</td></tr>`).join('')}</tbody></table></div><div class="vehicle-cards">${vs.map(v=>`<button class="vehicle-card" data-act="detail" data-id="${v.id}"><div class="split"><strong>${vtitle(v)}</strong>${page==='work'?orderChannelBadge(v):''}${badge(v.state)}</div><div class="mono">${esc(v.vin||v.reference+' · VIN 미등록')}</div>${page==='work'?`<div class="work-customer-card"><small>업체·주문자</small>${orderCustomerHTML(v,S.user.customer_access,esc)}<small>출고예정 ${esc(v.assignment?.scheduled||'미정')}</small></div>`:''}<div>${manufactureBadge(v)}<small> · 입고 ${fmt(v.received_at)}</small></div><div class="split" style="margin-top:12px"><small>${esc(place(v))}</small>${v.ubis==='INSTALLED'?'<span class="u">U</span>':''}</div></button>`).join('')}</div>`}
 function bundleLabel(m){const name=m.name||'',box=m.detail?.requires_rack??((name.includes('탑박스')||name.toUpperCase().includes('EPP'))&&!/짐대|브라켓/.test(name));return box?name+' + 짐대':name;}

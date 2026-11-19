@@ -166,6 +166,8 @@ def restore(path,destination,confirm=False):
  except Exception:shutil.rmtree(tmp,ignore_errors=True);raise
  return {'restored_to':str(dest),'database':str(dest/'warehouse.db'),**{k:v for k,v in report.items() if k!='manifest'}}
 def scheduler(db,stop):
+ last_attempt=0.0
+ last_attempt=0.0
  retry_after=0
  while not stop.wait(60):
   try:

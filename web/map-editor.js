@@ -1,114 +1,198 @@
 const uiScale=()=>Number(document.documentElement.style.zoom)||1;
 // Map coordinates are independent of viewport zoom and scroll.
+const MIN_MAP_ZOOM=0.4, MAX_MAP_ZOOM=2.0;
 let busy=false, cancelDrag=null, menu=null;
 export const isMapBusy=()=>busy||gestureBusy||!!menu;
-const closeMenu=()=>{menu?.remove();menu=null};
+const closeMenu=()=>{menu?.remove();menu=null;};
 document.addEventListener('pointerdown',e=>{if(menu&&!menu.contains(e.target))closeMenu()},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMenu();cancelDrag?.()} });
 window.addEventListener('blur',()=>{closeMenu();cancelDrag?.()});
 window.addEventListener('resize',closeMenu);
-export function bindMapEditor({state,editing,send,refresh,render,zoneEdit,slotAction,vehicleMove,objectsEdit,restructure,enableEdit,toast}){
- closeMenu();
- const canvas=document.querySelector('.map-canvas');if(!canvas)return;
- const viewport=canvas.closest('.map-viewport');
- bindMapNavigation(viewport);
- const admin=state.user.role==='admin';
- let step=Number(localStorage.getItem('warehouseSnap'))||20;
- if(![10,20,40].includes(step))step=20;
- const select=document.querySelector('#map-snap');
- const paint=()=>{canvas.style.backgroundSize=`${step}px ${step}px`;if(select)select.value=String(step)};paint();
- if(select)select.onchange=()=>{step=Number(select.value);localStorage.setItem('warehouseSnap',String(step));paint()};
- viewport.addEventListener('wheel',closeMenu,{passive:true});
- function popup(e,actions,title){
-  e.preventDefault();e.stopPropagation();closeMenu();
-  menu=document.createElement('div');menu.className='map-context';menu.setAttribute('role','menu');menu.setAttribute('aria-label',title);
-  const h=document.createElement('strong');h.textContent=title;menu.append(h);
-  for(const [label,action] of actions){const b=document.createElement('button');b.textContent=label;b.setAttribute('role','menuitem');b.onclick=()=>{closeMenu();action()};menu.append(b)}
-  document.body.append(menu);
-  menu.style.left=Math.max(8,Math.min(e.clientX/uiScale(),innerWidth/uiScale()-menu.offsetWidth-8))+'px';
-  menu.style.top=Math.max(8,Math.min(e.clientY/uiScale(),innerHeight/uiScale()-menu.offsetHeight-8))+'px';
-  menu.querySelector('button').focus({preventScroll:true});
- }
- function wire(el,handle,data,save,edit){
-  if(!admin)return;
-  el.oncontextmenu=e=>{if(!busy)popup(e,[['설정 수정…',edit],...(data.rows&&restructure?[['구역 분할…',()=>restructure('split',data.id)],['구역 병합…',()=>restructure('merge',data.id)]]:[]),...(!editing?[['배치 편집 시작',enableEdit]]:[['위치 직접 입력…',edit]])],data.name||data.label||'영역')};
-  if(!editing)return;
-  handle.classList.add('map-drag-handle');handle.title='드래그하여 격자에 맞춰 이동 · Esc 취소 · 오른쪽 클릭 설정';
-  handle.onpointerdown=e=>{
-   if(e.button!==0||e.target.closest('button,input,select')||busy)return;
-   e.preventDefault();closeMenu();busy=true;
-   const zoom=(Number(viewport.dataset.mapZoom)||1)*uiScale();
-   const start={x:data.x,y:data.y},origin=canvas.getBoundingClientRect();
-   const grab={x:(e.clientX-origin.left)/zoom-start.x,y:(e.clientY-origin.top)/zoom-start.y};
-   let pos={...start},moved=false;
-   const initial={x:e.clientX,y:e.clientY};handle.setPointerCapture(e.pointerId);
-   const mark=document.createElement('div');mark.className='map-drag-position';el.append(mark);
-   el.classList.add('map-dragging');
-   function restore(){el.style.left=start.x+'px';el.style.top=start.y+'px'}
-   function cleanup(){handle.onpointermove=null;handle.onpointerup=null;handle.onpointercancel=null;handle.onlostpointercapture=null;cancelDrag=null;mark.remove();el.classList.remove('map-dragging');if(handle.hasPointerCapture(e.pointerId))handle.releasePointerCapture(e.pointerId)}
-   cancelDrag=()=>{cleanup();restore();busy=false};
-   handle.onpointercancel=cancelDrag;handle.onlostpointercapture=cancelDrag;
-   handle.onpointermove=ev=>{
-    if(Math.hypot(ev.clientX-initial.x,ev.clientY-initial.y)<4&&!moved)return;
-    moved=true;const rect=canvas.getBoundingClientRect();
-    pos={x:Math.max(0,Math.min(10000,Math.round(((ev.clientX-rect.left)/zoom-grab.x)/step)*step)),y:Math.max(0,Math.min(10000,Math.round(((ev.clientY-rect.top)/zoom-grab.y)/step)*step))};
-    el.style.left=pos.x+'px';el.style.top=pos.y+'px';mark.textContent=`X ${pos.x} · Y ${pos.y}`;
-   };
-   handle.onpointerup=async()=>{
-    cleanup();if(!moved||(pos.x===start.x&&pos.y===start.y)){restore();busy=false;return}
-    try{await save(pos);toast('배치 위치 저장 완료')}
-    catch(error){restore();toast('위치 저장 실패: '+error.message);try{await refresh()}catch{}}
-    finally{busy=false;render()}
-   };
-  };
- }
- canvas.querySelectorAll('.slot').forEach(el=>{
-  if(!['admin','worker'].includes(state.user.role))return;
-  el.oncontextmenu=e=>{
-   const z=state.layout.zones.find(z=>z.id===el.dataset.zone),sl=z.slots.find(sl=>sl.id===el.dataset.slot);
-   const actions=[];
-   if(sl.stay_id&&el.dataset.vehicle&&vehicleMove)actions.push(['차량 이동…',()=>vehicleMove(el.dataset.vehicle)]);
-   if(sl.enabled&&!sl.stay_id){actions.push(['여기에 신규 차량 등록…',()=>slotAction('map-register',sl.id)],['기존 차량을 여기로 이동…',()=>slotAction('map-place',sl.id)])}
-   if(admin)actions.push(['구역 설정 수정…',()=>zoneEdit(z.id)]);
-   if(actions.length)popup(e,actions,z.name+' · '+sl.label);else e.stopPropagation();
-  };
- });
- canvas.querySelectorAll('.zone').forEach(el=>{const z=state.layout.zones.find(z=>z.id===el.dataset.zoneId);if(!z)return;
-  wire(el,el.querySelector('.zone-title'),z,pos=>send('zone',{id:z.id,version:z.version,warehouse_id:z.warehouse_id,name:z.name,kind:z.kind,rows:z.rows,cols:z.cols,model_ids:z.model_ids,active:z.active,...pos}),()=>zoneEdit(z.id));
- });
- canvas.querySelectorAll('.map-object').forEach(el=>{const index=Number(el.dataset.objectIndex),o=state.layout.objects[index];
-  wire(el,el,o,pos=>send('map_objects',{revision:state.revision,objects:state.layout.objects.map((obj,i)=>i===index?{...obj,...pos}:obj)}),objectsEdit);
- });
+
+export function applyMapZoom(viewport,nextZoom,clientX,clientY){
+  if(!viewport)return;
+  const canvas=viewport.querySelector('.map-canvas');if(!canvas)return;
+  const oldZoom=Number(viewport.dataset.mapZoom)||1;
+  const clamped=Math.max(MIN_MAP_ZOOM,Math.min(MAX_MAP_ZOOM,Math.round(nextZoom*100)/100));
+  viewport.dataset.mapZoom=String(clamped);
+  const rect=viewport.getBoundingClientRect();
+  const cx=clientX!==undefined?(clientX-rect.left):rect.width/2;
+  const cy=clientY!==undefined?(clientY-rect.top):rect.height/2;
+  const mapX=(viewport.scrollLeft+cx)/oldZoom;
+  const mapY=(viewport.scrollTop+cy)/oldZoom;
+  canvas.style.transformOrigin='0 0';
+  canvas.style.transform=`scale(${clamped})`;
+  viewport.scrollLeft=Math.max(0,mapX*clamped-cx);
+  viewport.scrollTop=Math.max(0,mapY*clamped-cy);
+  const label=document.querySelector('#map-zoom-label');
+  if(label)label.textContent=Math.round(clamped*100)+'%';
+  const range=document.querySelector('#map-zoom-range');
+  if(range)range.value=String(Math.round(clamped*100));
 }
 
-// Local view gestures do not save or move warehouse data.
+export function fitMapViewport(viewport){
+  if(!viewport)return;
+  const canvas=viewport.querySelector('.map-canvas');if(!canvas)return;
+  const w=canvas.offsetWidth||1400, h=canvas.offsetHeight||860;
+  const scaleX=(viewport.clientWidth-24)/w, scaleY=(viewport.clientHeight-24)/h;
+  const fit=Math.max(MIN_MAP_ZOOM,Math.min(1.2,Math.min(scaleX,scaleY)));
+  applyMapZoom(viewport,fit);
+  viewport.scrollLeft=0;viewport.scrollTop=0;
+}
+
+function ensureZoomToolbar(viewport){
+  if(!viewport)return;
+  const bar=document.querySelector('.warehouse-bar')||viewport.parentElement;
+  if(!bar||bar.querySelector('#map-zoom-controls'))return;
+  const box=document.createElement('div');
+  box.id='map-zoom-controls';
+  box.className='map-zoom-controls';
+  const initPct=Math.round((Number(viewport.dataset.mapZoom)||1)*100);
+  box.innerHTML=`
+    <button type="button" class="ghost map-zoom-btn" data-zoom-step="-0.15" title="축소 (-)">−</button>
+    <input id="map-zoom-range" type="range" min="40" max="200" step="5" value="${initPct}" aria-label="창고지도 배율">
+    <strong id="map-zoom-label" class="mono">${initPct}%</strong>
+    <button type="button" class="ghost map-zoom-btn" data-zoom-step="0.15" title="확대 (+)">+</button>
+    <button type="button" class="ghost map-zoom-reset" title="100% 기본 배율">100%</button>
+    <button type="button" class="ghost map-zoom-fit" title="화면에 맞추기">화면 맞춤</button>
+  `;
+  bar.append(box);
+  box.querySelectorAll('[data-zoom-step]').forEach(btn=>{
+    btn.onclick=e=>{e.preventDefault();const cur=Number(viewport.dataset.mapZoom)||1;applyMapZoom(viewport,cur+Number(btn.dataset.zoomStep));};
+  });
+  const range=box.querySelector('#map-zoom-range');
+  if(range)range.oninput=()=>applyMapZoom(viewport,Number(range.value)/100);
+  const resetBtn=box.querySelector('.map-zoom-reset');
+  if(resetBtn)resetBtn.onclick=e=>{e.preventDefault();applyMapZoom(viewport,1);};
+  const fitBtn=box.querySelector('.map-zoom-fit');
+  if(fitBtn)fitBtn.onclick=e=>{e.preventDefault();fitMapViewport(viewport);};
+}
+
+export function bindMapEditor({state,editing,send,refresh,render,zoneEdit,slotAction,vehicleMove,objectsEdit,restructure,enableEdit,toast}){
+  closeMenu();
+  const canvas=document.querySelector('.map-canvas');if(!canvas)return;
+  const viewport=canvas.closest('.map-viewport');
+  ensureZoomToolbar(viewport);
+  bindMapNavigation(viewport);
+  applyMapZoom(viewport,Number(viewport?.dataset.mapZoom)||1);
+  const admin=state.user.role==='admin';
+  let step=Number(localStorage.getItem('warehouseSnap'))||20;
+  if(![10,20,40].includes(step))step=20;
+  const select=document.querySelector('#map-snap');
+  const paint=()=>{canvas.style.backgroundSize=`${step}px ${step}px`;if(select)select.value=String(step)};paint();
+  if(select)select.onchange=()=>{step=Number(select.value);localStorage.setItem('warehouseSnap',String(step));paint()};
+  function popup(e,actions,title){
+    e.preventDefault();e.stopPropagation();closeMenu();
+    menu=document.createElement('div');menu.className='map-context';menu.setAttribute('role','menu');menu.setAttribute('aria-label',title);
+    const h=document.createElement('strong');h.textContent=title;menu.append(h);
+    for(const [label,action] of actions){const b=document.createElement('button');b.textContent=label;b.setAttribute('role','menuitem');b.onclick=()=>{closeMenu();action()};menu.append(b)}
+    document.body.append(menu);
+    menu.style.left=Math.max(8,Math.min(e.clientX/uiScale(),innerWidth/uiScale()-menu.offsetWidth-8))+'px';
+    menu.style.top=Math.max(8,Math.min(e.clientY/uiScale(),innerHeight/uiScale()-menu.offsetHeight-8))+'px';
+    menu.querySelector('button').focus({preventScroll:true});
+  }
+  function wire(el,handle,data,save,edit){
+    if(!admin)return;
+    el.oncontextmenu=e=>{if(!busy)popup(e,[['설정 수정...',edit],...(data.rows&&restructure?[['구역 분할...',()=>restructure('split',data.id)],['구역 병합...',()=>restructure('merge',data.id)]]:[]),...(!editing?[['배치 편집 시작',enableEdit]]:[['위치 직접 입력...',edit]])],data.name||data.label||'영역')};
+    if(!editing)return;
+    handle.classList.add('map-drag-handle');handle.title='드래그하여 격자에 맞춰 이동 · Esc 취소 · 오른쪽 클릭 설정';
+    handle.onpointerdown=e=>{
+      if(e.button!==0||e.target.closest('button,input,select')||busy)return;
+      e.preventDefault();closeMenu();busy=true;
+      const zoom=(Number(viewport.dataset.mapZoom)||1)*uiScale();
+      const start={x:data.x,y:data.y},origin=canvas.getBoundingClientRect();
+      const grab={x:(e.clientX-origin.left)/zoom-start.x,y:(e.clientY-origin.top)/zoom-start.y};
+      let pos={...start},moved=false;
+      const initial={x:e.clientX,y:e.clientY};handle.setPointerCapture(e.pointerId);
+      const mark=document.createElement('div');mark.className='map-drag-position';el.append(mark);
+      el.classList.add('map-dragging');
+      function restore(){el.style.left=start.x+'px';el.style.top=start.y+'px'}
+      function cleanup(){handle.onpointermove=null;handle.onpointerup=null;handle.onpointercancel=null;handle.onlostpointercapture=null;cancelDrag=null;mark.remove();el.classList.remove('map-dragging');if(handle.hasPointerCapture(e.pointerId))handle.releasePointerCapture(e.pointerId)}
+      cancelDrag=()=>{cleanup();restore();busy=false};
+      handle.onpointercancel=cancelDrag;handle.onlostpointercapture=cancelDrag;
+      handle.onpointermove=ev=>{
+        if(Math.hypot(ev.clientX-initial.x,ev.clientY-initial.y)<4&&!moved)return;
+        moved=true;const rect=canvas.getBoundingClientRect();
+        pos={x:Math.max(0,Math.min(10000,Math.round(((ev.clientX-rect.left)/zoom-grab.x)/step)*step)),y:Math.max(0,Math.min(10000,Math.round(((ev.clientY-rect.top)/zoom-grab.y)/step)*step))};
+        el.style.left=pos.x+'px';el.style.top=pos.y+'px';mark.textContent=`X ${pos.x} · Y ${pos.y}`;
+      };
+      handle.onpointerup=async()=>{
+        cleanup();if(!moved||(pos.x===start.x&&pos.y===start.y)){restore();busy=false;return}
+        try{await save(pos);toast('배치 위치 저장 완료')}
+        catch(error){restore();toast('위치 저장 실패: '+error.message);try{await refresh()}catch{}}
+        finally{busy=false;render()}
+      };
+    };
+  }
+  canvas.querySelectorAll('.slot').forEach(el=>{
+    if(!['admin','worker'].includes(state.user.role))return;
+    el.oncontextmenu=e=>{
+      const z=state.layout.zones.find(z=>z.id===el.dataset.zone),sl=z.slots.find(sl=>sl.id===el.dataset.slot);
+      const actions=[];
+      if(sl.stay_id&&el.dataset.vehicle&&vehicleMove)actions.push(['차량 이동...',()=>vehicleMove(el.dataset.vehicle)]);
+      if(sl.enabled&&!sl.stay_id){actions.push(['여기에 신규 차량 등록...',()=>slotAction('map-register',sl.id)],['기존 차량을 여기로 이동...',()=>slotAction('map-place',sl.id)])}
+      if(admin)actions.push(['구역 설정 수정...',()=>zoneEdit(z.id)]);
+      if(actions.length)popup(e,actions,z.name+' · '+sl.label);else e.stopPropagation();
+    };
+  });
+  canvas.querySelectorAll('.zone').forEach(el=>{const z=state.layout.zones.find(z=>z.id===el.dataset.zoneId);if(!z)return;
+    wire(el,el.querySelector('.zone-title'),z,pos=>send('zone',{id:z.id,version:z.version,warehouse_id:z.warehouse_id,name:z.name,kind:z.kind,rows:z.rows,cols:z.cols,model_ids:z.model_ids,active:z.active,...pos}),()=>zoneEdit(z.id));
+  });
+  canvas.querySelectorAll('.map-object').forEach(el=>{const index=Number(el.dataset.objectIndex),o=state.layout.objects[index];
+    wire(el,el,o,pos=>send('map_objects',{revision:state.revision,objects:state.layout.objects.map((obj,i)=>i===index?{...obj,...pos}:obj)}),objectsEdit);
+  });
+}
+
 let gestureBusy=false,resetNavigation=null;
 window.addEventListener('blur',()=>resetNavigation?.());
 export function bindMapNavigation(viewport){
- resetNavigation?.();
- let drag=null,suppressUntil=0;
- function reset(){const old=drag;drag=null;gestureBusy=false;viewport.classList.remove('map-panning');if(old&&viewport.hasPointerCapture(old.id))viewport.releasePointerCapture(old.id);}
- resetNavigation=reset;
- viewport.addEventListener('pointerdown',e=>{
-  if(e.button!==0||busy)return;
-  if(!e.isPrimary){if(drag){suppressUntil=Date.now()+500;reset();}return;}
-  // Slots (including empty slots) and edit handles retain their existing actions.
-  if(e.target.closest('button,input,select,textarea,a,.slot-shell,.map-object,.map-drag-handle,[draggable=true]'))return;
-  drag={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
-  gestureBusy=true;closeMenu();viewport.setPointerCapture(e.pointerId);e.preventDefault();
- },true);
- viewport.addEventListener('pointermove',e=>{
-  if(!drag||drag.id!==e.pointerId)return;
-  if(e.pointerType==='mouse'&&!(e.buttons&1)){reset();return;}
-  if(!drag.moved&&Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)<6)return;
-  drag.moved=true;viewport.classList.add('map-panning');
-  viewport.scrollLeft-=(e.clientX-drag.x)/uiScale();viewport.scrollTop-=(e.clientY-drag.y)/uiScale();
-  drag.x=e.clientX;drag.y=e.clientY;suppressUntil=Date.now()+500;
-  e.preventDefault();e.stopImmediatePropagation();
- },true);
- function end(e){if(drag?.id!==e.pointerId)return;const moved=drag.moved;reset();if(moved){suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();}}
- for(const name of ['pointerup','pointercancel','lostpointercapture'])viewport.addEventListener(name,end,true);
- viewport.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
- viewport.addEventListener('dragstart',e=>{if(drag)e.preventDefault();},true);
- // No map wheel/pinch zoom. Wheel scrolling and the app-wide UI scale stay independent.
+  if(!viewport||viewport.dataset.navBound==='1')return;
+  viewport.dataset.navBound='1';
+  let drag=null,suppressUntil=0,pinchStartDist=null,pinchStartZoom=1;
+  const pointers=new Map();
+  function reset(){const old=drag;drag=null;gestureBusy=false;viewport.classList.remove('map-panning');if(old&&viewport.hasPointerCapture(old.id))viewport.releasePointerCapture(old.id);}
+  resetNavigation=reset;
+  viewport.addEventListener('wheel',e=>{
+    e.preventDefault();closeMenu();
+    const cur=Number(viewport.dataset.mapZoom)||1;
+    const delta=e.deltaY<0?0.1:-0.1;
+    applyMapZoom(viewport,cur+delta,e.clientX,e.clientY);
+  },{passive:false});
+  viewport.addEventListener('pointerdown',e=>{
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size===2){
+      const pts=Array.from(pointers.values());
+      pinchStartDist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+      pinchStartZoom=Number(viewport.dataset.mapZoom)||1;
+      reset();return;
+    }
+    if(e.button!==0||busy)return;
+    if(!e.isPrimary){if(drag){suppressUntil=Date.now()+500;reset();}return;}
+    if(e.target.closest('button,input,select,textarea,a,.slot-shell,.map-object,.map-drag-handle,[draggable=true]'))return;
+    drag={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
+    gestureBusy=true;closeMenu();viewport.setPointerCapture(e.pointerId);e.preventDefault();
+  },true);
+  viewport.addEventListener('pointermove',e=>{
+    if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pointers.size===2&&pinchStartDist){
+      const pts=Array.from(pointers.values());
+      const dist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+      if(dist>20){
+        applyMapZoom(viewport,pinchStartZoom*(dist/pinchStartDist),(pts[0].x+pts[1].x)/2,(pts[0].y+pts[1].y)/2);
+        suppressUntil=Date.now()+500;
+      }
+      return;
+    }
+    if(!drag||drag.id!==e.pointerId)return;
+    if(e.pointerType==='mouse'&&!(e.buttons&1)){reset();return;}
+    if(!drag.moved&&Math.hypot(e.clientX-drag.startX,e.clientY-drag.startY)<6)return;
+    drag.moved=true;viewport.classList.add('map-panning');
+    viewport.scrollLeft-=(e.clientX-drag.x)/uiScale();viewport.scrollTop-=(e.clientY-drag.y)/uiScale();
+    drag.x=e.clientX;drag.y=e.clientY;suppressUntil=Date.now()+500;
+    e.preventDefault();e.stopImmediatePropagation();
+  },true);
+  function end(e){pointers.delete(e.pointerId);if(pointers.size<2)pinchStartDist=null;if(drag?.id!==e.pointerId)return;const moved=drag.moved;reset();if(moved){suppressUntil=Date.now()+500;e.preventDefault();e.stopImmediatePropagation();}}
+  for(const name of ['pointerup','pointercancel','lostpointercapture'])viewport.addEventListener(name,end,true);
+  viewport.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.preventDefault();e.stopImmediatePropagation();}},true);
+  viewport.addEventListener('dragstart',e=>{if(drag)e.preventDefault();},true);
 }

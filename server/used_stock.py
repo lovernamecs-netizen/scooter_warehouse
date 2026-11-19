@@ -10,11 +10,10 @@ def read(s,st):
  row=s.get(Setting,'used_profile:'+st.id) if st else None
  return dict(row.value) if row else {}
 def missing(p):
- labels={'mileage':'주행거리','exterior':'외장 컨디션'}
- out=[label for key,label in labels.items() if p.get(key) is None or p.get(key)=='']
- if not p.get('equipment_checked'):out.append('기존 장착품 확인')
- if not p.get('repairs_done'):out.append('필요 보수작업 완료 확인')
- if p.get('washed') is False:out.append('세차 완료')
+ out=[]
+ if not p.get('repairs_done'):out.append('정비 완료')
+ if p.get('washed') is False or not p.get('washed'):out.append('세차 완료')
+ if not p.get('oil_changed'):out.append('엔진오일 교환')
  return out
 
 def put(s,key,value):
@@ -23,7 +22,20 @@ def put(s,key,value):
  else:s.add(Setting(key=key,value=value))
 
 def summary(s,st):
- p=read(s,st);return {'ready':bool(p.get('ready')),'mileage':p.get('mileage'),'status':'상품화 완료' if p.get('ready') else '상품화 진행' if p else '점검 미등록'}
+ p=read(s,st)
+ thumb_id=None
+ if st:
+  rows=list(s.scalars(select(Setting).where(Setting.key.startswith('used_media:'+st.id+':'))))
+  active=[r.value for r in rows if isinstance(r.value,dict) and not r.value.get('deleted_at') and r.value.get('id')]
+  whole=[d['id'] for d in active if d.get('category')=='intake' and d.get('key')=='whole']
+  front=[d['id'] for d in active if d.get('key')=='front']
+  any_photo=[d['id'] for d in active]
+  thumb_id=(whole or front or any_photo or [None])[-1]
+  if not thumb_id:
+   for view in VIEWS:
+    if s.get(Setting,'used_photo:'+st.id+':'+view):
+     thumb_id='legacy:'+view;break
+ return {'ready':bool(p.get('ready')),'mileage':p.get('mileage'),'exterior':p.get('exterior',''),'thumb_id':thumb_id,'stay_id':st.id if st else None,'status':'상품화 완료' if p.get('ready') else '상품화 진행' if p else '점검 미등록'}
 
 def page(s,u,ident,stay_id=None):
  from .domain import get,need,vehicle_dto
@@ -41,28 +53,37 @@ def page(s,u,ident,stay_id=None):
  registration=register(s,st) if st else ''
  dto=vehicle_dto(s,v,u)
  if 'equipment_notes' not in p and dto.get('equipment'):p['equipment_notes']='\n'.join(e['item']['name'] for e in dto.get('equipment',[]))
- return {'stays':[{'id':x.id,'received_at':str(x.received_at),'closed_at':str(x.closed_at) if x.closed_at else None} for x in s.scalars(select(Stay).where(Stay.vehicle_id==v.id).order_by(Stay.received_at.desc()))],'stay_id':st.id if st else None,'registration':registration,'media':media,'parts':PARTS,'vehicle':dto,'profile':p,'photos':photos,'views':VIEWS,'missing':missing(p),'ready':info['ready'],'publication_ready':info['ready'] and (set(CATEGORIES['product']).issubset({x['key'] for x in media if x['category']=='product'}|set(photos)) or len(photos)==len(VIEWS)),'editable':bool(st and not st.closed_at and not v.archived and u.role in ['admin','worker'])}
+ return {'stays':[{'id':x.id,'received_at':str(x.received_at),'closed_at':str(x.closed_at) if x.closed_at else None} for x in s.scalars(select(Stay).where(Stay.vehicle_id==v.id).order_by(Stay.received_at.desc()))],'stay_id':st.id if st else None,'registration':registration,'media':media,'parts':PARTS,'vehicle':dto,'profile':p,'photos':photos,'views':VIEWS,'missing':missing(p),'ready':info['ready'],'publication_ready':info['ready'],'editable':bool(st and not st.closed_at and not v.archived and u.role in ['admin','worker'])}
 
 def execute(s,u,action,p):
  from .domain import get,need,version,current_stay,clean,qty,valid_date,today,audit,iso,now
  need(u.role in ['admin','worker'],'상품화 수정 권한이 없습니다.',403)
  v=get(s,Vehicle,p.get('vehicle_id'));version(v,p);need(v.kind=='USED','중고차만 가능합니다.');st=current_stay(s,v)
+ version_bumped=False
  if action=='used_profile':
   d=p.get('profile',{});need(isinstance(d,dict),'점검 정보 형식 오류')
   data={k:d.get(k) for k in FIELDS}
   for k in ['mileage','pad_front','pad_rear','tire_front','tire_rear']:
-   if data[k] is not None:qty(data[k],0,3000000 if k=='mileage' else 100)
+   if data[k] is not None and data[k]!='':qty(data[k],0,3000000 if k=='mileage' else 100)
+   else:data[k]=None
   for k in ['exterior','description','equipment_notes']:data[k]=clean(data[k] or '',4000)
-  for k in ['oil_changed','equipment_checked','repairs_done']:need(isinstance(data[k],bool),'확인 항목 형식 오류')
-  data['washed']=d.get('washed',False) is True
-  damage=d.get('damage',{});need(isinstance(damage,dict) and len(damage)<=40,'파손 정보 형식 오류')
+  data['oil_changed']=bool(d.get('oil_changed',False))
+  data['equipment_checked']=bool(d.get('equipment_checked',True))
+  data['repairs_done']=bool(d.get('repairs_done',False))
+  data['washed']=bool(d.get('washed',False))
+  damage=d.get('damage') or {}
   data['damage']={}
-  for key,value in damage.items():
-   need(key in PARTS and isinstance(value,dict),'부위 정보 오류')
-   status=value.get('status','unchecked');need(status in ['unchecked','normal','damaged','repaired'],'부위 상태 오류')
-   data['damage'][key]={'status':status,'note':clean(value.get('note',''),1000)}
-  data['oil_date']=valid_date(data['oil_date']) if data['oil_date'] else ''
+  if isinstance(damage,dict):
+   for key,value in list(damage.items())[:40]:
+    if key in PARTS and isinstance(value,dict):
+     status=value.get('status','unchecked')
+     if status in ['unchecked','normal','damaged','repaired']:
+      data['damage'][key]={'status':status,'note':clean(value.get('note',''),1000)}
+  data['oil_date']=valid_date(data['oil_date']) if data.get('oil_date') else (today() if data['oil_changed'] else '')
   need(not data['oil_date'] or data['oil_date']<=today(),'오일 교환일은 미래일 수 없습니다.')
+  if p.get('complete') is True:
+   miss=missing(data)
+   need(not miss,'상품화 완료 전 필수 체크 항목을 확인하세요: '+', '.join(miss))
   data['ready']=p.get('complete') is True
   data.update(updated_at=iso(now()),actor=u.username)
   put(s,'used_profile:'+st.id,data)
@@ -77,12 +98,11 @@ def execute(s,u,action,p):
   prefix='used_media:'+st.id+':'
   if p.get('remove'):
    ident=p.get('id','');row=s.get(Setting,prefix+ident);need(row is not None,'사진이 없습니다.',404);row.value={**row.value,'deleted_at':iso(now()),'deleted_by':u.username}
-   blob=s.get(Setting,'used_media_data:'+st.id+':'+ident)
-   if blob:pass
   else:
    from .photo_store import upload
    raw,mime=decode_image(p.get('original',''))
    upload(s,u,v.id,st.id,p.get('upload_id') or str(uuid.uuid4()),category,key,raw)
+   version_bumped=True
   audit(s,u,'USED_PHOTO_CHANGED',{'category':category,'key':key,'removed':bool(p.get('remove'))},v)
  elif action=='used_photo':
   view=p.get('view');need(view in VIEWS,'촬영 방향을 선택하세요.')
@@ -97,7 +117,8 @@ def execute(s,u,action,p):
    need(len(raw)<=1000000 and raw.startswith(b'\xff\xd8\xff') and raw.endswith(b'\xff\xd9'),'JPEG 사진만 등록할 수 있습니다.')
    put(s,key,{'jpeg':encoded,'at':iso(now()),'sha256':hashlib.sha256(raw).hexdigest()})
   audit(s,u,'USED_PHOTO_CHANGED',{'view':view,'removed':bool(p.get('remove'))},v)
- v.version+=1;s.flush();return {'vehicle_id':v.id,'version':v.version}
+ if not version_bumped:v.version+=1
+ s.flush();return {'vehicle_id':v.id,'version':v.version}
 
 PARTS={'front':'전면 카울','headlight':'헤드라이트','shield':'윈드스크린','mirror':'미러','handle':'핸들','floor':'발판','seat':'시트','rear':'후면 카울','left':'좌측 카울','right':'우측 카울','exhaust':'머플러','front_fender':'앞 펜더','rear_fender':'뒤 펜더'}
 CATEGORIES={'intake':['whole','plate','vin','front','rear','left','right','cockpit','other'],'damage':list(PARTS),'wear':['pad_front','pad_rear','tire_front','tire_rear'],'product':['front','rear','left','right','cockpit','dashboard']}
@@ -113,32 +134,9 @@ def decode_image(encoded,limit=25000000):
  need(isinstance(encoded,str) and len(encoded)<=limit*4//3+8,'사진은 25MB 이하로 선택하세요.')
  try:raw=base64.b64decode(encoded,validate=True)
  except Exception:need(False,'사진 형식 오류')
- mime='image/jpeg' if raw.startswith(b'\xff\xd8\xff') and raw.endswith(b'\xff\xd9') else 'image/png' if raw.startswith(b'\x89PNG\r\n\x1a\n') else 'image/webp' if raw[:4]==b'RIFF' and raw[8:12]==b'WEBP' else ''
- need(mime and len(raw)<=limit,'JPG, PNG 또는 WebP 사진을 선택하세요.');return raw,mime
-
-def card_cover(s, user, vehicle_id, stay_id):
- from .domain import get, need
- need(user.role != 'ubis', '권한이 없습니다.', 403)
- vehicle = get(s, Vehicle, vehicle_id)
- current = get(s, Stay, stay_id)
- need(vehicle.kind == 'USED' and current.vehicle_id == vehicle.id, '중고차 입고 회차를 확인하세요.', 404)
- prefix = 'used_media:' + stay_id + ':'
- priority = [('intake','whole')] + [(category,side) for category in ('product','intake') for side in ('left','right','front','rear')]
- candidates = []
- for row in s.scalars(select(Setting).where(Setting.key >= prefix, Setting.key < prefix[:-1]+';')):
-  media = row.value
-  view = (media.get('category'), media.get('key'))
-  if not media.get('deleted_at') and view in priority:
-   candidates.append((-priority.index(view), media.get('at',''), media['id']))
- if candidates:
-  photo_id = max(candidates)[2]
-  raw, mime, _ = media_download(s,user,vehicle_id,photo_id=photo_id,preview=True,stay_id=stay_id)
-  return raw, mime
- for view in ('perspective','left','right','front','rear'):
-  old = s.get(Setting, 'used_photo:'+stay_id+':'+view)
-  if old:
-   return decode_image(old.value['jpeg'])
- return None, None
+ is_heic=len(raw)>=12 and raw[4:8]==b'ftyp' and raw[8:12] in [b'heic',b'heix',b'hevc',b'hevx',b'mif1',b'msf1']
+ mime='image/jpeg' if raw.startswith(b'\xff\xd8\xff') and raw.endswith(b'\xff\xd9') else 'image/png' if raw.startswith(b'\x89PNG\r\n\x1a\n') else 'image/webp' if raw[:4]==b'RIFF' and raw[8:12]==b'WEBP' else 'image/heic' if is_heic else ''
+ need(mime and len(raw)<=limit,'JPG, PNG, WebP 또는 HEIC 사진만 선택하세요.');return raw,mime
 
 def media_download(s,u,ident,photo_id=None,category=None,preview=False,stay_id=None):
  import io,zipfile
@@ -163,8 +161,8 @@ def media_download(s,u,ident,photo_id=None,category=None,preview=False,stay_id=N
    if d.get('deleted_at') or (category!='all' and d['category']!=category):continue
    if 'root_id' in d:
     from .photo_store import read_file
-    raw,mime,name=read_file(s,d);z.writestr(d['category']+'/'+name,raw);count+=1;continue
-   content=s.get(Setting,'used_media_data:'+st.id+':'+d['id']);raw,mime=decode_image((content.value if content else d)['original']);ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[mime];z.writestr(d['category']+'/'+d['key']+'-'+d['id'][:8]+'.'+ext,raw);count+=1
+    raw,mime,name=read_file(s,d,preview);z.writestr(d['category']+'/'+name,raw);count+=1;continue
+   content=s.get(Setting,'used_media_data:'+st.id+':'+d['id']);raw,mime=decode_image((content.value if content else d)['original']);ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/heic':'heic'}[mime];z.writestr(d['category']+'/'+d['key']+'-'+d['id'][:8]+'.'+ext,raw);count+=1
   if category in ['all','product']:
    for view in VIEWS:
     row=s.get(Setting,'used_photo:'+st.id+':'+view)

@@ -20,8 +20,11 @@ def config(s):
  row=s.get(Setting,'photo_storage')
  if row:return dict(row.value)
  db=Path(s.bind.url.database or 'warehouse.db').resolve()
- from .storage_paths import data_root
- base=data_root()
+ try:
+  from .storage_paths import data_root
+  base=data_root()
+ except ImportError:
+  base=None
  root=base/'Photos' if base else db.parent/'Data'/'Vehicles'
  return {'active':'default','roots':{'default':str(root)},'backup_path':str((base or db.parent)/'Backups'),'retention':7,'daily':False}
 def safe(root,relative):
@@ -46,7 +49,14 @@ def checked(raw):
     need(fmt in ['JPEG','PNG','WEBP','HEIF','HEIC'],'JPEG, PNG, WebP, HEIC 사진만 지원합니다.',415)
     need(w>0 and h>0 and w*h<=100_000_000,'사진 해상도 범위 초과',422)
     im.load();orientation=im.getexif().get(274,1)
-    thumb=ImageOps.exif_transpose(im);thumb.thumbnail((1100,1100));thumb=thumb.convert('RGB')
+    thumb=ImageOps.exif_transpose(im);thumb.thumbnail((1100,1100))
+    if thumb.mode in ('RGBA','LA') or (thumb.mode=='P' and 'transparency' in thumb.info):
+     bg=Image.new('RGB',thumb.size,(255,255,255))
+     rgba=thumb.convert('RGBA')
+     bg.paste(rgba,mask=rgba.split()[3])
+     thumb=bg
+    else:
+     thumb=thumb.convert('RGB')
     b=io.BytesIO();thumb.save(b,'JPEG',quality=82)
     return {'width':w,'height':h,'orientation':orientation,'format':fmt,'mime':{'JPEG':'image/jpeg','PNG':'image/png','WEBP':'image/webp','HEIF':'image/heic','HEIC':'image/heic'}[fmt],'ext':{'JPEG':'jpg','PNG':'png','WEBP':'webp','HEIF':'heic','HEIC':'heic'}[fmt]},b.getvalue()
  except Exception as e:
@@ -70,7 +80,9 @@ def upload(s,u,vehicle_id,stay_id,upload_id,category,key,raw,captured_at='',expe
  need(shutil.disk_usage(root).free>len(raw)*2+50_000_000,'PC 사진 저장 공간이 부족합니다.',507)
  prefix='used_media:'+st.id+':'
  rows=list(s.scalars(select(Setting).where(Setting.key.startswith(prefix))))
- need(migration or sum(not r.value.get('deleted_at') for r in rows)<100,'회차당 사진은 최대 100장입니다.')
+ replaceable=sum(1 for r in rows if category=='product' and not migration and r.value.get('category')==category and r.value.get('key')==key and not r.value.get('deleted_at'))
+ active_count=sum(not r.value.get('deleted_at') for r in rows)-replaceable
+ need(migration or active_count<100,'회차당 사진은 최대 100장입니다.')
  folder={'damage':'Damage','intake':'Inspection','wear':'Inspection','product':'Product'}[category]
  rel=f'{v.id}/{st.id}/{folder}/{key}_{ident}.{meta.pop("ext")}'
  d={'id':ident,'upload_id':ident,'vehicle_id':v.id,'stay_id':st.id,'category':category,'key':key,'root_id':cfg['active'],'path':rel,'thumbnail':f'{v.id}/{st.id}/Thumbnails/{key}_{ident}.jpg','size':len(raw),'sha256':sha,'at':stamp(),'captured_at':captured_at[:100] or stamp(),'actor':u.username,'status':'saved',**meta}
@@ -89,7 +101,6 @@ def upload(s,u,vehicle_id,stay_id,upload_id,category,key,raw,captured_at='',expe
  put(s,prefix+ident,d);put(s,'photo_upload:'+ident,d);put(s,'photo_storage',cfg)
  audit(s,u,'USED_PHOTO_STORED',{'photo_id':ident,'stay_id':st.id,'sha256':sha,'size':len(raw)},v)
  v.version+=1;s.get(Guard,1).revision+=1;s.flush()
- # Journal retained intentionally: recovery can distinguish committed and uncommitted files.
  return d
 
 def read_file(s,d,preview=False):
@@ -99,7 +110,7 @@ def read_file(s,d,preview=False):
  if not preview:need(digest(raw)==d['sha256'],'원본 파일 무결성 오류',503)
  return raw,'image/jpeg' if preview else d['mime'],p.name
 
-def status(s):
+def status(s,deep=False):
  cfg=config(s);roots=[];failures=[]
  for ident,path in cfg['roots'].items():
   p=Path(path);parent=p
@@ -110,13 +121,18 @@ def status(s):
     if not s.get(Setting,'photo_upload:'+j.stem):failures.append({'id':j.stem,'state':'파일 기록 후 DB 미확정','journal':str(j)})
  for r in s.scalars(select(Setting).where(Setting.key.startswith('used_media:'))):
   if 'root_id' in r.value:
-   try:read_file(s,r.value)
+   try:
+    if deep:read_file(s,r.value)
+    else:
+     root=cfg['roots'].get(r.value['root_id']);need(root,'경로 없음',503)
+     fp=safe(root,r.value['path']);need(fp.is_file() and fp.stat().st_size==r.value.get('size',fp.stat().st_size),'누락',503)
    except Exception:failures.append({'id':r.value['id'],'state':'원본 누락 또는 무결성 오류'})
  last=s.get(Setting,'photo_backup_status')
  warnings=backup_warnings(s)
  database=Path(s.bind.url.database).resolve() if s.bind.dialect.name=='sqlite' and s.bind.url.database!=':memory:' else None
  sizes={name:(Path(str(database)+suffix).stat().st_size if database and Path(str(database)+suffix).is_file() else 0) for name,suffix in [('database',''),('wal','-wal'),('shm','-shm')]}
  return {**cfg,'sizes':sizes,'database_path':str(Path(s.bind.url.database).resolve()) if s.bind.dialect.name=='sqlite' else '외부 DB','warnings':warnings,'storage':roots,'failures':failures,'backup':last.value if last else {}}
+
 def backup_warnings(s):
  cfg=config(s);last=s.get(Setting,'photo_backup_status')
  warnings=[]
