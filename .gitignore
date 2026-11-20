@@ -78,3 +78,5 @@ releases/
 /SHA256SUMS.txt
 /READ_ME_한국어.txt
 /먼저읽기.txt
+/.venv-local/
+/.runtime-setup.lock

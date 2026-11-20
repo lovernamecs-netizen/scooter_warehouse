@@ -24,7 +24,9 @@ $env:DATABASE_URL = 'sqlite:///development.db'
 .\.venv\Scripts\python.exe -m server.cli demo
 .\.venv\Scripts\python.exe -m uvicorn server.app:app --host 127.0.0.1 --port 8766
 ```
-init에서 관리자 암호를 직접 설정합니다. START_LOCAL_SERVER.cmd는 warehouse.db와 8765를 고정 사용하므로 개발 실행에 사용하지 않습니다. 기존 .venv가 있으면 의존성을 재설치하지 않는 한계가 있습니다.
+init에서 관리자 암호를 직접 설정합니다. 개발 테스트에는 위처럼 별도 DB와 포트를 지정합니다.
+
+운영 폴더를 다른 Windows PC로 옮겼다면 `windows/START_LOCAL_SERVER.cmd`를 실행합니다. 현재 PC의 Python 3.12 64비트를 자동으로 찾으며, 없으면 python.org 공식 설치 파일의 서명을 확인하고 설치 화면을 엽니다. 설치를 완료하면 필요한 패키지 설치와 서버 실행을 이어갑니다. 첫 설치에는 인터넷 연결이 필요합니다. 복사된 `.venv`가 작동하지 않거나 패키지가 부족하면 `.venv-local`에 실행 환경을 구성합니다. DB는 기존 `DATABASE_URL` 또는 `WAREHOUSE_DATA_DIR` 설정을 사용하고, 설정이 없으면 운영 폴더의 `warehouse.db`를 사용합니다. 기존 DB가 없으면 시작 오류를 안내합니다.
 
 ## 테스트·빌드
 별도 개발 폴더에서 DATABASE_URL을 개발 DB로 설정하고 TEST_DATABASE_URL을 제거한 뒤 실행합니다.
